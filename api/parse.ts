@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { parseResume } from '../server/src/services/deepseekService';
-import { extractTextFromBuffer } from '../server/src/services/fileService';
+import { extractTextFromBuffer } from './_lib/fileService';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 只允许 POST

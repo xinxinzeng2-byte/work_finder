@@ -16,5 +16,8 @@
     "@vercel/node": "^3.2.4",
     "concurrently": "^8.2.2",
     "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "pdf-parse": "^1.1.1"
   }
 }

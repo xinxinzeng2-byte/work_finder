@@ -27,8 +27,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (action === 'question') {
       // 生成引导问题
-      if (!gap) {
-        res.status(400).json({ error: '缺少缺口信息' });
+      if (!gap || !resume) {
+        res.status(400).json({ error: '缺少缺口信息或简历数据' });
         return;
       }
       const question = await generateFollowUpQuestions(apiKey, gap, resume);

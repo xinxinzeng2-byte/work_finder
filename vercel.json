@@ -1,1 +1,21 @@
-{"version": 2, "builds": [{"src": "api/**/*.ts", "use": "@vercel/node"}, {"src": "client/package.json", "use": "@vercel/static-build", "config": {"distDir": "dist"}}], "routes": [{"src": "/api/health", "dest": "/api/health"}, {"src": "/api/test-key", "dest": "/api/test-key"}, {"src": "/api/parse", "dest": "/api/parse"}, {"src": "/api/parse-jd", "dest": "/api/parse-jd"}, {"src": "/api/match", "dest": "/api/match"}, {"src": "/api/supplement", "dest": "/api/supplement"}, {"src": "/api/generate", "dest": "/api/generate"}, {"src": "/(.*)", "dest": "/client/$1"}]}
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm install",
+  "buildCommand": "npm run build",
+  "outputDirectory": "client/dist",
+  "functions": {
+    "api/*.ts": {
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/health",
+      "destination": "/api/health"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
