@@ -28,3 +28,6 @@ data/
 
 # uploads (临时文件)
 uploads/
+
+# 本地文档，不推送
+使用说明.md
