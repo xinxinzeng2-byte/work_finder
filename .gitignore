@@ -1,0 +1,30 @@
+# dependencies
+node_modules/
+*/node_modules/
+
+# build
+dist/
+build/
+client/dist/
+
+# env
+.env
+.env.local
+server/.env
+
+# data
+data/
+*.log
+
+# os
+.DS_Store
+
+# editor
+.vscode/
+.idea/
+
+# vercel
+.vercel/
+
+# uploads (临时文件)
+uploads/

@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-canvas text-ink;
+    @apply font-sans antialiased;
+    font-size: 15px;
+    line-height: 1.8;
+  }
+  h1, h2, h3 {
+    @apply font-serif;
+  }
+}
+
+@layer components {
+  /* 主按钮 */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2;
+    @apply px-6 h-10 rounded-[6px] bg-terra text-white text-sm font-medium;
+    @apply transition-all duration-200;
+    @apply hover:bg-terra-hover;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary:not(:disabled):hover {
+    transform: translateY(-1px);
+  }
+  /* 次按钮 */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2;
+    @apply px-6 h-10 rounded-[6px] bg-transparent;
+    @apply border-[1.5px] border-line text-ink text-sm font-medium;
+    @apply transition-all duration-200;
+    @apply hover:border-terra hover:text-terra;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  /* 文字按钮 */
+  .btn-link {
+    @apply inline-flex items-center gap-1;
+    @apply text-sm text-terra;
+    @apply transition-colors hover:text-terra-hover;
+  }
+
+  /* 卡片 */
+  .card {
+    @apply bg-paper rounded-lg border border-line p-6;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+
+  /* 输入框 - 底线式 */
+  .input {
+    @apply w-full bg-transparent border-0;
+    @apply border-b-[1.5px] border-line px-0 py-2;
+    @apply text-sm text-ink;
+    @apply placeholder:text-ink-weak;
+    @apply focus:outline-none focus:border-terra;
+    @apply transition-colors;
+  }
+  .textarea {
+    @apply w-full bg-paper;
+    @apply border-[1.5px] border-line rounded-[6px] px-3 py-2;
+    @apply text-sm text-ink;
+    @apply placeholder:text-ink-weak;
+    @apply focus:outline-none focus:border-terra;
+    @apply transition-colors resize-y;
+  }
+  .label {
+    @apply block text-[13px] text-ink-secondary mb-1;
+  }
+
+  /* 上传区 */
+  .upload-zone {
+    @apply border-[1.5px] border-dashed border-[#d4cfc9] rounded-[8px] bg-canvas;
+    @apply text-center cursor-pointer transition-colors;
+    @apply hover:bg-[#f3f0eb];
+  }
+}
+
+/* 卡片入场动画 */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d4cfc9;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b8b0a8;
+}
