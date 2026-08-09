@@ -15,6 +15,28 @@
 }
 
 @layer components {
+  /* 页面标题区 */
+  .page-shell {
+    @apply mx-auto w-full max-w-[1440px] px-8 py-10;
+  }
+  .page-header {
+    @apply flex justify-between gap-8 border-b border-line pb-7;
+    @apply mb-8;
+  }
+  .page-header > div:first-child {
+    @apply min-w-0;
+  }
+  .page-header h1 {
+    @apply mt-3 text-[42px] font-semibold leading-tight tracking-tight text-ink;
+  }
+  .eyebrow {
+    @apply m-0 font-sans text-[13px] font-bold uppercase tracking-[0.18em] text-terra;
+    line-height: 1.2;
+  }
+  .page-subtitle {
+    @apply mt-3 text-base leading-relaxed text-ink-secondary;
+  }
+
   /* 主按钮 */
   .btn-primary {
     @apply inline-flex items-center justify-center gap-2;

@@ -20,10 +20,10 @@ export const ImportView: React.FC<Props> = ({ onComplete, existingResume }) => {
 
   const handleFileSelect = (selectedFile: File | null) => {
     if (!selectedFile) return;
-    const validExts = ['.pdf', '.html', '.htm'];
+    const validExts = ['.pdf', '.docx', '.html', '.htm', '.txt'];
     const ext = '.' + selectedFile.name.split('.').pop()?.toLowerCase();
     if (!validExts.includes(ext)) {
-      setError('仅支持 PDF 和 HTML 文件');
+      setError('仅支持 PDF、Word（.docx）、HTML 和 TXT 文件');
       return;
     }
     setError('');
@@ -118,7 +118,7 @@ export const ImportView: React.FC<Props> = ({ onComplete, existingResume }) => {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.html,.htm"
+            accept=".pdf,.docx,.html,.htm,.txt"
             className="hidden"
             onChange={(e) => handleFileSelect(e.target.files?.[0] || null)}
           />
@@ -132,7 +132,7 @@ export const ImportView: React.FC<Props> = ({ onComplete, existingResume }) => {
           ) : (
             <div>
               <p className="text-sm text-ink-secondary">点击或拖拽文件到此处</p>
-              <p className="text-xs text-ink-weak mt-1">支持 PDF、HTML 格式</p>
+              <p className="text-xs text-ink-weak mt-1">支持 PDF、Word（.docx）、HTML、TXT 格式</p>
             </div>
           )}
         </div>

@@ -14,6 +14,34 @@
       "destination": "/api/health"
     },
     {
+      "source": "/api/ai/test-key",
+      "destination": "/api/test-key"
+    },
+    {
+      "source": "/api/ai/parse-resume",
+      "destination": "/api/parse"
+    },
+    {
+      "source": "/api/ai/parse-jd",
+      "destination": "/api/parse-jd"
+    },
+    {
+      "source": "/api/ai/analyze-match",
+      "destination": "/api/match"
+    },
+    {
+      "source": "/api/ai/followup/question",
+      "destination": "/api/supplement"
+    },
+    {
+      "source": "/api/ai/followup/format",
+      "destination": "/api/supplement"
+    },
+    {
+      "source": "/api/ai/generate-resume",
+      "destination": "/api/generate"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

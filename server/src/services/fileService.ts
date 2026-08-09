@@ -1,6 +1,7 @@
 import multer from 'multer';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdf = require('pdf-parse');
+import mammoth from 'mammoth';
 import path from 'path';
 
 // 使用内存存储，兼容 Vercel 等 Serverless 只读文件系统
@@ -8,13 +9,13 @@ export const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (_req, file, cb) => {
-    const allowedTypes = ['application/pdf', 'text/html'];
+    const allowedTypes = ['application/pdf', 'text/html', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
     const ext = path.extname(file.originalname).toLowerCase();
-    const allowedExts = ['.pdf', '.html', '.htm'];
+    const allowedExts = ['.pdf', '.docx', '.html', '.htm', '.txt'];
     if (allowedTypes.includes(file.mimetype) || allowedExts.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error('不支持的文件类型，仅支持 PDF 和 HTML 文件'));
+      cb(new Error('不支持的文件类型，仅支持 PDF、Word（.docx）、HTML 和 TXT 文件'));
     }
   },
 });
@@ -58,6 +59,14 @@ export function extractTextFromHtmlString(content: string): string {
 }
 
 /**
+ * 从 DOCX 文件 Buffer 提取纯文本。
+ */
+export async function extractTextFromDocxBuffer(buffer: Buffer): Promise<string> {
+  const result = await mammoth.extractRawText({ buffer });
+  return result.value.trim();
+}
+
+/**
  * 根据 buffer 和原始文件名提取文本
  */
 export async function extractTextFromBuffer(
@@ -70,6 +79,12 @@ export async function extractTextFromBuffer(
   }
   if (ext === '.html' || ext === '.htm') {
     return extractTextFromHtmlString(buffer.toString('utf-8'));
+  }
+  if (ext === '.docx') {
+    return extractTextFromDocxBuffer(buffer);
+  }
+  if (ext === '.txt') {
+    return buffer.toString('utf-8').trim();
   }
   throw new Error(`不支持的文件类型: ${ext}`);
 }

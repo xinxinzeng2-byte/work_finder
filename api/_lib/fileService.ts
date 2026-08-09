@@ -1,5 +1,6 @@
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdf = require('pdf-parse');
+import mammoth from 'mammoth';
 import path from 'path';
 
 /**
@@ -36,6 +37,11 @@ function extractTextFromHtmlString(content: string): string {
     .trim();
 }
 
+async function extractTextFromDocxBuffer(buffer: Buffer): Promise<string> {
+  const result = await mammoth.extractRawText({ buffer });
+  return result.value.trim();
+}
+
 /**
  * 根据文件扩展名从 Buffer 中提取文本。
  */
@@ -50,6 +56,12 @@ export async function extractTextFromBuffer(
   }
   if (extension === '.html' || extension === '.htm') {
     return extractTextFromHtmlString(buffer.toString('utf-8'));
+  }
+  if (extension === '.docx') {
+    return extractTextFromDocxBuffer(buffer);
+  }
+  if (extension === '.txt') {
+    return buffer.toString('utf-8').trim();
   }
 
   throw new Error(`不支持的文件类型: ${extension}`);

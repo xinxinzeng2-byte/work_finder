@@ -45,7 +45,10 @@ export async function handleParseResume(req: Request, res: Response): Promise<vo
       return;
     }
 
-    if (!req.file) {
+    const encodedFile = req.body?.file?.data as string | undefined;
+    const encodedFileName = req.body?.file?.originalname as string | undefined;
+
+    if (!req.file && !encodedFile) {
       // 如果没有文件，检查是否有文本输入
       const { text } = req.body;
       if (!text || text.trim().length === 0) {
@@ -57,9 +60,10 @@ export async function handleParseResume(req: Request, res: Response): Promise<vo
       return;
     }
 
-    // 从内存 buffer 提取文本（不落盘，兼容 Serverless）
-    const fileName = req.file.originalname;
-    const text = await extractTextFromBuffer(req.file.buffer, fileName);
+    // 同时支持本地 multer 文件和前端 Base64 文件。
+    const fileName = req.file?.originalname || encodedFileName || 'resume.pdf';
+    const buffer = req.file?.buffer || Buffer.from(encodedFile!, 'base64');
+    const text = await extractTextFromBuffer(buffer, fileName);
 
     if (!text || text.trim().length < 10) {
       res.status(400).json({ error: '文件内容为空或无法提取文字（注意：暂不支持图片/扫描件）' });
