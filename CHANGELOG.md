@@ -1,5 +1,19 @@
 # 更新日志
 
+## 修复 Preview 云端数据接口加载失败（2026-08-29）
+
+- 修复 `api/data` 路由被通用 `data/` 忽略规则排除，导致 Preview 无法加载简历、岗位和草稿数据的问题。
+- 为认证和用户数据接口增加禁止缓存响应，客户端请求禁用缓存，避免收到没有响应体的 `304` 响应。
+
+### 涉及文件
+
+- `.gitignore`
+- `api/data/[...path].ts`
+- `api/auth/[action].ts`
+- `client/src/utils/storage.ts`
+- `vercel.json`
+- `CHANGELOG.md`
+
 ## 修复多用户云端数据隔离与同步可靠性（2026-08-29）
 
 - 修复 Preview 云端已有简历但岗位为空时，本地岗位被空数据覆盖的问题。

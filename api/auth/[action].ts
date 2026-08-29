@@ -5,6 +5,7 @@ import { allowMethods, bodyObject, isNonEmptyString } from '../_lib/http';
 import { isValidEmail, normalizeEmail } from '../_lib/email';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  res.setHeader('Cache-Control', 'private, no-store, max-age=0, must-revalidate');
   const action = Array.isArray(req.query.action) ? req.query.action[0] : req.query.action;
   if (action === 'register') return register(req, res);
   if (action === 'login') return login(req, res);

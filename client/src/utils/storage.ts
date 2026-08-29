@@ -37,11 +37,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('auth_token');
   const headers = new Headers(init.headers);
   headers.set('Content-Type', 'application/json');
+  // 登录态和用户数据不能使用浏览器/CDN缓存，否则可能收到没有响应体的 304。
+  headers.set('Cache-Control', 'no-cache');
   if (token) headers.set('Authorization', `Bearer ${token}`);
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 12_000);
   try {
-    const response = await fetch(`${API_BASE}${path}`, { ...init, headers, signal: controller.signal });
+    const response = await fetch(`${API_BASE}${path}`, { ...init, headers, signal: controller.signal, cache: 'no-store' });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
       throw new Error(data.error || `请求失败 (${response.status})`);

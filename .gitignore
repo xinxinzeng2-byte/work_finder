@@ -13,7 +13,7 @@ client/dist/
 server/.env
 
 # data
-data/
+/data/
 *.log
 
 # os
