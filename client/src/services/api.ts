@@ -15,8 +15,12 @@ const BASE_URL = '/api/ai';
  */
 function buildHeaders(json: boolean = true): Record<string, string> {
   const headers: Record<string, string> = {};
+  const token = localStorage.getItem('auth_token');
   // 云端模式由后端按登录用户从数据库读取并解密，避免把 API Key 明文放进请求头。
   const key = isCloudMode ? null : getApiKey();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
   if (key) {
     headers['x-deepseek-key'] = key;
   }
