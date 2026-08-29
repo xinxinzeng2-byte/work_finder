@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { analyzeMatch } from '../server/src/services/deepseekService';
 import type { ParsedResume, ParsedJobDescription } from '../server/src/types';
+import { resolveApiKey } from './_lib/apiKey';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -9,7 +10,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const apiKey = req.headers['x-deepseek-key'] as string || '';
+    const apiKey = await resolveApiKey(req);
     if (!apiKey) {
       res.status(400).json({ error: '未配置 DeepSeek API Key' });
       return;

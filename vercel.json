@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "npm install",
+  "installCommand": "npm install && cd client && npm install",
   "buildCommand": "npm run build",
   "outputDirectory": "client/dist",
   "functions": {
@@ -8,10 +8,57 @@
       "maxDuration": 60
     }
   },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "private, no-store, max-age=0, must-revalidate"
+        }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/health",
       "destination": "/api/health"
+    },
+    {
+      "source": "/api/ai/test-key",
+      "destination": "/api/test-key"
+    },
+    {
+      "source": "/api/ai/parse-resume",
+      "destination": "/api/parse"
+    },
+    {
+      "source": "/api/ai/parse-jd",
+      "destination": "/api/parse-jd"
+    },
+    {
+      "source": "/api/ai/analyze-match",
+      "destination": "/api/match"
+    },
+    {
+      "source": "/api/ai/followup/question",
+      "destination": "/api/supplement"
+    },
+    {
+      "source": "/api/ai/followup/format",
+      "destination": "/api/supplement"
+    },
+    {
+      "source": "/api/ai/generate-resume",
+      "destination": "/api/generate"
+    },
+    {
+      "source": "/api/auth/:action",
+      "destination": "/api/auth/[action]"
+    },
+    {
+      "source": "/api/data/:path*",
+      "destination": "/api/data/[...path]"
     },
     {
       "source": "/(.*)",

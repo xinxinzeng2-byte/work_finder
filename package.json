@@ -4,20 +4,32 @@
   "private": true,
   "description": "AI 求职助手 - 简历智能优化与岗位匹配工具",
   "scripts": {
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev": "npm run dev:db",
+    "dev:db": "concurrently \"npm run dev:server\" \"npm run dev:client:db\"",
+    "dev:local": "concurrently \"npm run dev:server\" \"npm run dev:client:local\"",
+    "dev:full": "env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy vercel dev",
     "dev:server": "cd server && npm run dev",
     "dev:client": "cd client && npm run dev",
+    "dev:client:db": "cd client && npm run dev:db",
+    "dev:client:local": "cd client && npm run dev:local",
     "install:all": "npm install && cd server && npm install && cd ../client && npm install",
     "build": "cd client && npm run build",
     "build:server": "cd server && npm run build"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.14.0",
     "@vercel/node": "^3.2.4",
     "concurrently": "^8.2.2",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "vercel": "^59.10.0"
   },
   "dependencies": {
-    "pdf-parse": "^1.1.1"
+    "bcryptjs": "^3.0.3",
+    "jsonwebtoken": "^9.0.3",
+    "mammoth": "^1.12.0",
+    "pdf-parse": "^1.1.1",
+    "postgres": "^3.4.9"
   }
 }

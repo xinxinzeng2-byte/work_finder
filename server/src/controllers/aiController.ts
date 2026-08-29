@@ -10,19 +10,28 @@ import {
   testApiKey,
 } from '../services/deepseekService';
 import type { ParsedResume, ParsedJobDescription, MatchResult } from '../types';
+import { getUserId } from '../services/authService';
+import { getUserApiKey } from '../services/userApiKeyService';
 
 /**
  * 从请求中获取 API Key（优先请求头，其次环境变量）
  */
-function getApiKey(req: Request): string {
+async function getApiKey(req: Request): Promise<string> {
   const keyFromHeader = req.headers['x-deepseek-key'] as string | undefined;
-  return keyFromHeader || process.env.DEEPSEEK_API_KEY || '';
+  if (keyFromHeader) return keyFromHeader;
+  try {
+    const storedKey = await getUserApiKey(getUserId(req));
+    if (storedKey) return storedKey;
+  } catch {
+    // 本地开发允许使用服务端环境变量，不要求登录。
+  }
+  return process.env.DEEPSEEK_API_KEY || '';
 }
 
 // 测试 API Key
 export async function handleTestApiKey(req: Request, res: Response): Promise<void> {
   try {
-    const apiKey = getApiKey(req);
+    const apiKey = await getApiKey(req);
     if (!apiKey) {
       res.status(400).json({ error: '未配置 DeepSeek API Key' });
       return;
@@ -39,13 +48,16 @@ export async function handleTestApiKey(req: Request, res: Response): Promise<voi
 // 解析简历
 export async function handleParseResume(req: Request, res: Response): Promise<void> {
   try {
-    const apiKey = getApiKey(req);
+    const apiKey = await getApiKey(req);
     if (!apiKey) {
       res.status(400).json({ error: '未配置 DeepSeek API Key，请先在设置中填入' });
       return;
     }
 
-    if (!req.file) {
+    const encodedFile = req.body?.file?.data as string | undefined;
+    const encodedFileName = req.body?.file?.originalname as string | undefined;
+
+    if (!req.file && !encodedFile) {
       // 如果没有文件，检查是否有文本输入
       const { text } = req.body;
       if (!text || text.trim().length === 0) {
@@ -57,9 +69,10 @@ export async function handleParseResume(req: Request, res: Response): Promise<vo
       return;
     }
 
-    // 从内存 buffer 提取文本（不落盘，兼容 Serverless）
-    const fileName = req.file.originalname;
-    const text = await extractTextFromBuffer(req.file.buffer, fileName);
+    // 同时支持本地 multer 文件和前端 Base64 文件。
+    const fileName = req.file?.originalname || encodedFileName || 'resume.pdf';
+    const buffer = req.file?.buffer || Buffer.from(encodedFile!, 'base64');
+    const text = await extractTextFromBuffer(buffer, fileName);
 
     if (!text || text.trim().length < 10) {
       res.status(400).json({ error: '文件内容为空或无法提取文字（注意：暂不支持图片/扫描件）' });
@@ -78,7 +91,7 @@ export async function handleParseResume(req: Request, res: Response): Promise<vo
 // 解析 JD
 export async function handleParseJobDescription(req: Request, res: Response): Promise<void> {
   try {
-    const apiKey = getApiKey(req);
+    const apiKey = await getApiKey(req);
     if (!apiKey) {
       res.status(400).json({ error: '未配置 DeepSeek API Key' });
       return;
@@ -102,7 +115,7 @@ export async function handleParseJobDescription(req: Request, res: Response): Pr
 // 匹配分析
 export async function handleAnalyzeMatch(req: Request, res: Response): Promise<void> {
   try {
-    const apiKey = getApiKey(req);
+    const apiKey = await getApiKey(req);
     if (!apiKey) {
       res.status(400).json({ error: '未配置 DeepSeek API Key' });
       return;
@@ -130,7 +143,7 @@ export async function handleAnalyzeMatch(req: Request, res: Response): Promise<v
 // 补录引导 - 生成引导问题
 export async function handleGenerateFollowUpQuestion(req: Request, res: Response): Promise<void> {
   try {
-    const apiKey = getApiKey(req);
+    const apiKey = await getApiKey(req);
     if (!apiKey) {
       res.status(400).json({ error: '未配置 DeepSeek API Key' });
       return;
@@ -154,7 +167,7 @@ export async function handleGenerateFollowUpQuestion(req: Request, res: Response
 // 补录引导 - 格式化用户补录经历
 export async function handleFormatFollowUpExperience(req: Request, res: Response): Promise<void> {
   try {
-    const apiKey = getApiKey(req);
+    const apiKey = await getApiKey(req);
     if (!apiKey) {
       res.status(400).json({ error: '未配置 DeepSeek API Key' });
       return;
@@ -178,7 +191,7 @@ export async function handleFormatFollowUpExperience(req: Request, res: Response
 // 生成定制简历
 export async function handleGenerateResume(req: Request, res: Response): Promise<void> {
   try {
-    const apiKey = getApiKey(req);
+    const apiKey = await getApiKey(req);
     if (!apiKey) {
       res.status(400).json({ error: '未配置 DeepSeek API Key' });
       return;

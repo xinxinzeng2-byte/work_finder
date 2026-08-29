@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { getApiKey, saveApiKey, exportData, clearAllData } from '../utils/storage';
+import { getApiKey, hasApiKey, isCloudApiKeyMode, saveApiKey, saveApiKeyToCloud, exportData, clearAllData } from '../utils/storage';
+import { useEffect } from 'react';
 import { testApiKey } from '../services/api';
 
 interface Props {
@@ -9,27 +10,53 @@ interface Props {
 
 export const SettingsModal: React.FC<Props> = ({ open, onClose }) => {
   const [apiKey, setApiKey] = useState(getApiKey() || '');
+
+  useEffect(() => {
+    if (open) {
+      setApiKey(getApiKey() || '');
+      setError('');
+      setTestResult('none');
+    }
+  }, [open]);
   const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [testResult, setTestResult] = useState<'none' | 'success' | 'fail'>('none');
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
 
   if (!open) return null;
 
-  const handleSave = () => {
-    saveApiKey(apiKey.trim());
-    setSaved(true);
-    setTestResult('none');
-    setTimeout(() => setSaved(false), 2000);
+  const persistApiKey = async () => {
+    const value = apiKey.trim();
+    if (!value) return;
+    // 云端保存失败时保留本地临时副本，保存成功后会删除浏览器明文。
+    saveApiKey(value);
+    if (isCloudApiKeyMode && localStorage.getItem('auth_token')) await saveApiKeyToCloud(value);
+  };
+
+  const handleSave = async () => {
+    setSaving(true); setError('');
+    try {
+      await persistApiKey();
+      setSaved(true);
+      setTestResult('none');
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'API Key 保存失败，请重试');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleTest = async () => {
-    saveApiKey(apiKey.trim());
-    setTesting(true);
+    setTesting(true); setError('');
     setTestResult('none');
     try {
+      await persistApiKey();
       const valid = await testApiKey();
       setTestResult(valid ? 'success' : 'fail');
-    } catch {
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'API Key 保存失败，请重试');
       setTestResult('fail');
     } finally {
       setTesting(false);
@@ -64,13 +91,14 @@ export const SettingsModal: React.FC<Props> = ({ open, onClose }) => {
           <p className="text-xs text-ink-weak mt-2 leading-relaxed">
             在 platform.deepseek.com 注册并创建 API Key，充几块钱即可使用。
           </p>
+          {isCloudApiKeyMode && hasApiKey() && !apiKey && <p className="mt-2 text-xs text-moss">当前账号已配置 API Key；如需更换，请直接输入新的 Key 并保存。</p>}
 
           <div className="flex gap-3 mt-4">
             <button onClick={handleTest} disabled={testing || !apiKey.trim()} className="btn-ghost text-sm">
               {testing ? '测试中...' : '测试连接'}
             </button>
-            <button onClick={handleSave} className="btn-primary text-sm">
-              {saved ? '已保存' : '保存'}
+            <button onClick={() => void handleSave()} disabled={saving || !apiKey.trim()} className="btn-primary text-sm">
+              {saving ? '保存中...' : saved ? '已保存' : '保存'}
             </button>
           </div>
 
@@ -80,6 +108,7 @@ export const SettingsModal: React.FC<Props> = ({ open, onClose }) => {
           {testResult === 'fail' && (
             <p className="mt-3 text-xs text-terra">连接失败，请检查 Key 或账户余额</p>
           )}
+          {error && <p className="mt-3 text-xs text-terra">{error}</p>}
         </div>
 
         <div className="border-t border-line pt-6">
@@ -104,7 +133,7 @@ export const SettingsModal: React.FC<Props> = ({ open, onClose }) => {
 
         <div className="border-t border-line pt-6 mt-6">
           <p className="text-xs text-ink-weak leading-relaxed">
-            所有数据仅保存在你的浏览器本地，不上传任何服务器。
+            {isCloudApiKeyMode ? 'DeepSeek API Key 会加密保存到当前账号的云端，数据库和浏览器都不保存明文。' : '当前为本地预览模式，DeepSeek API Key 仅保存在当前浏览器，可随时在这里修改。'}
           </p>
         </div>
       </div>

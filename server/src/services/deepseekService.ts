@@ -130,22 +130,33 @@ ${resumeText}
   try {
     const parsed = JSON.parse(content);
     // 补充 ID
-    const skills: AtomicSkill[] = (parsed.skills || []).map((s: Omit<AtomicSkill, 'id'>) => ({
-      ...s,
+    const skills: AtomicSkill[] = (Array.isArray(parsed.skills) ? parsed.skills : []).map((s: Omit<AtomicSkill, 'id'>) => ({
+      category: typeof s.category === 'string' ? s.category : '',
+      name: typeof s.name === 'string' ? s.name : '',
+      level: typeof s.level === 'string' ? s.level : '',
+      evidence: typeof s.evidence === 'string' ? s.evidence : '',
       id: generateId('skill'),
     }));
-    const experiences: AtomicExperience[] = (parsed.experiences || []).map(
+    const experiences: AtomicExperience[] = (Array.isArray(parsed.experiences) ? parsed.experiences : []).map(
       (e: Omit<AtomicExperience, 'id' | 'skillsUsed'>) => ({
-        ...e,
+        company: typeof e.company === 'string' ? e.company : '',
+        role: typeof e.role === 'string' ? e.role : '',
+        period: typeof e.period === 'string' ? e.period : '',
+        achievements: Array.isArray(e.achievements) ? e.achievements.filter((item): item is string => typeof item === 'string') : [],
+        rawText: typeof e.rawText === 'string' ? e.rawText : '',
         id: generateId('exp'),
         skillsUsed: [],
       })
     );
 
+    if (skills.length === 0 && experiences.length === 0) {
+      throw new Error('AI 未从简历中提取出能力或经历，请检查简历文本后重试');
+    }
+
     return {
       skills,
       experiences,
-      basicInfo: parsed.basicInfo || {},
+      basicInfo: parsed.basicInfo && typeof parsed.basicInfo === 'object' && !Array.isArray(parsed.basicInfo) ? parsed.basicInfo : {},
       rawText: resumeText,
     };
   } catch (error) {

@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:db": "VITE_DATA_MODE=cloud VITE_API_KEY_MODE=local vite",
+    "dev:local": "VITE_DATA_MODE=local vite",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
