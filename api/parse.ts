@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { parseResume } from '../server/src/services/deepseekService';
 import { extractTextFromBuffer } from './_lib/fileService';
+import { resolveApiKey } from './_lib/apiKey';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 只允许 POST
@@ -10,7 +11,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const apiKey = req.headers['x-deepseek-key'] as string || '';
+    const apiKey = await resolveApiKey(req);
     if (!apiKey) {
       res.status(400).json({ error: '未配置 DeepSeek API Key，请先在设置中填入' });
       return;

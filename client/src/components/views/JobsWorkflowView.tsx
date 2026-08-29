@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { ParsedJobDescription, ParsedResume, MatchResult, GeneratedResume, AtomicExperience } from '../../types';
-import { formatFollowUpExperience, generateFollowUpQuestion, generateTailoredResume, analyzeMatch, parseJobDescription, parseResumeFile, readFileAsDataUrl } from '../../services/api';
+import { formatFollowUpExperience, generateFollowUpQuestion, generateTailoredResume, analyzeMatch, parseJobDescription, parseResumeFile, parseResumeText, readFileAsDataUrl } from '../../services/api';
 import { Loading } from '../Loading';
 import WorkflowProgressBar, { type WorkflowStep } from '../WorkflowProgressBar';
-import { clearWorkflowDraft, generateId, getApiKey, getNextSequenceNumber, loadResumes, loadWorkflowDraft, mergeExperiencesFromResumes, mergeSkillsFromResumes, saveCustomizedResume, saveJob, saveResume, saveWorkflowDraft, updateJob, type ResumeItem, type SavedJob } from '../../utils/storage';
+import { clearWorkflowDraft, generateId, getNextSequenceNumber, hasApiKey, loadResumes, loadWorkflowDraft, mergeExperiencesFromResumes, mergeSkillsFromResumes, saveCustomizedResume, saveJob, saveResume, saveWorkflowDraft, updateJob, updateResumeData, type ResumeItem, type SavedJob } from '../../utils/storage';
 
 interface Props {
   onJobsChange: () => void;
@@ -49,7 +49,7 @@ export const JobsWorkflowView: React.FC<Props> = ({ onJobsChange, onExit, onNeed
   useEffect(() => {
     if (draft?.data.extractedSkills) setMergedSkills(draft.data.extractedSkills);
     if (draft?.data.extractedExperiences) setMergedExperiences(draft.data.extractedExperiences);
-  }, []);
+  }, [draft]);
 
   useEffect(() => {
     if (currentStep === 'ai-match' || currentStep === 'supplement' || currentStep === 'generate') return;
@@ -57,7 +57,7 @@ export const JobsWorkflowView: React.FC<Props> = ({ onJobsChange, onExit, onNeed
   }, [currentStep, sourceMode, selectedResumeIds, jdInput, parsedJd, mergedSkills, mergedExperiences]);
 
   const requireKey = () => {
-    if (getApiKey()) return true;
+    if (hasApiKey()) return true;
     onNeedApiKey();
     setError('请先配置 API Key，再使用 AI 功能。');
     return false;
@@ -79,14 +79,53 @@ export const JobsWorkflowView: React.FC<Props> = ({ onJobsChange, onExit, onNeed
     finally { setLoading(false); }
   };
 
-  const handleConfirmResumes = () => {
+  const handleConfirmResumes = async () => {
     if (sourceResumes.length === 0) { setError(sourceMode === 'library' ? '当前能力库还没有可使用的原始简历，请先导入简历。' : sourceMode === 'import' ? '请先导入一份新简历。' : '请至少选择一份原始简历。'); return; }
-    const skills = mergeSkillsFromResumes(sourceResumes);
-    const experiences = mergeExperiencesFromResumes(sourceResumes);
+    // 正常导入时第 1 步已经完成 AI 解析；如果是 preview 中的历史记录，可能只保存了原文。
+    // 仅对能力和经历同时为空的历史脏记录做一次补提取，正常进入第 2 步不会重复消耗 AI。
+    const incomplete = sourceResumes.filter((item) => item.resume.skills.length === 0 && item.resume.experiences.length === 0);
+    const missingText = incomplete.filter((item) => !(item.resume.rawText || item.originalText || '').trim());
+    if (missingText.length > 0) {
+      setError(`简历“${missingText[0].name}”没有可用于 AI 提取的原文，请返回重新导入。`);
+      return;
+    }
+    let nextResumes = resumes;
+    if (incomplete.length > 0) {
+      if (!requireKey()) return;
+      setLoading(true); setError('');
+      try {
+        for (const item of incomplete) {
+          const sourceText = (item.resume.rawText || item.originalText || '').trim();
+          const parsed = await parseResumeText(sourceText);
+          if (parsed.skills.length === 0 && parsed.experiences.length === 0) {
+            throw new Error(`AI 未能从“${item.name}”中提取出能力或经历，请检查原文后重试。`);
+          }
+          updateResumeData(item.id, parsed);
+          nextResumes = nextResumes.map((candidate) => candidate.id === item.id ? { ...candidate, resume: parsed } : candidate);
+        }
+        setResumes(nextResumes);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'AI 提取能力失败，请重试');
+        return;
+      } finally {
+        setLoading(false);
+      }
+    }
+    const nextSourceResumes = (sourceMode === 'library' ? nextResumes : nextResumes.filter((item) => selectedResumeIds.includes(item.id))).filter((item) => item.type === 'original');
+    const skills = mergeSkillsFromResumes(nextSourceResumes);
+    const experiences = mergeExperiencesFromResumes(nextSourceResumes);
     setMergedSkills(skills); setMergedExperiences(experiences); setError('');
     setCompletedSteps((steps) => Array.from(new Set<WorkflowStep>([...steps, 'import-resume'])));
     setCurrentStep('extract-skills');
   };
+
+  // 兼容用户直接打开了保存到第 2 步的旧草稿：不要让空结果停留在页面上。
+  useEffect(() => {
+    if (currentStep !== 'extract-skills' || loading || mergedSkills.length > 0 || mergedExperiences.length > 0) return;
+    if (sourceResumes.length > 0) void handleConfirmResumes();
+    // 仅在数据为空时触发；成功后 mergedSkills / mergedExperiences 变化会自动停止重试。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep, loading, mergedSkills.length, mergedExperiences.length, sourceResumes.length]);
 
   const buildMergedResume = (): ParsedResume => {
     const first = sourceResumes[0]?.resume;
@@ -121,7 +160,8 @@ export const JobsWorkflowView: React.FC<Props> = ({ onJobsChange, onExit, onNeed
         matchScore: result.score, mainGaps: result.gaps.slice(0, 3).map((gap) => gap.requirement), analyzedAt: now,
         status: 'analyzed', jd: parsedJd, matchResult: result, sourceResumeIds: sourceResumes.map((item) => item.id), resumeSnapshot: merged, createdAt: now, updatedAt: now,
       };
-      saveJob(job); setSavedJob(job); setMatchResult(result); onJobsChange(); clearWorkflowDraft();
+      // 先完成岗位结果持久化，再清理草稿；刷新或重新进入详情时只读取这份快照。
+      await saveJob(job); setSavedJob(job); setMatchResult(result); onJobsChange(); await clearWorkflowDraft();
       setCompletedSteps((steps) => Array.from(new Set<WorkflowStep>([...steps, 'input-job', 'ai-match']))); setCurrentStep('ai-match');
     } catch (err) { setError(err instanceof Error ? err.message : '匹配分析失败，请重试'); }
     finally { setLoading(false); }
@@ -191,14 +231,14 @@ export const JobsWorkflowView: React.FC<Props> = ({ onJobsChange, onExit, onNeed
       if (savedJob) { updateJob(savedJob.id, { status: 'completed', generatedResume: result }); setSavedJob({ ...savedJob, status: 'completed', generatedResume: result }); }
       saveCustomizedResume({ basicInfo: analysisResume.basicInfo, rawText: result.summary, skills: analysisResume.skills, experiences: result.experiences.map((item) => ({ id: generateId(), company: item.company, role: item.role, period: item.period, description: item.description, achievements: item.highlights, skillsUsed: [], rawText: `${item.description}\n${item.highlights.join('\n')}` })) }, { name: `${parsedJd.position || '岗位'}${parsedJd.company ? ` @${parsedJd.company}` : ''}`, sourceIds: sourceResumes.map((item) => item.id), targetJob: { position: parsedJd.position || '', company: parsedJd.company, matchScore: matchResult.score } });
       onJobsChange();
-      clearWorkflowDraft();
+      await clearWorkflowDraft();
       setCompletedSteps((steps) => Array.from(new Set<WorkflowStep>([...steps, 'supplement', 'generate']))); setCurrentStep('generate');
     } catch (err) { setError(err instanceof Error ? err.message : '生成定制简历失败'); }
     finally { setLoading(false); }
   };
 
   const goBack = () => { const index = STEP_ORDER.indexOf(currentStep); if (index > 0) setCurrentStep(STEP_ORDER[index - 1]); };
-  const canNext = currentStep === 'import-resume' ? sourceResumes.length > 0 : currentStep === 'extract-skills' ? true : currentStep === 'input-job' ? !!parsedJd : false;
+  const canNext = currentStep === 'import-resume' ? sourceResumes.length > 0 : currentStep === 'extract-skills' ? mergedSkills.length > 0 || mergedExperiences.length > 0 : currentStep === 'input-job' ? !!parsedJd : false;
 
   const renderResumeSourceStep = () => <section className="card">
     <h2 className="font-serif text-xl font-semibold">选择能力来源</h2>
@@ -230,6 +270,7 @@ export const JobsWorkflowView: React.FC<Props> = ({ onJobsChange, onExit, onNeed
         <button onClick={() => setExtractTab('experiences')} className={`-mb-px border-b-2 px-4 py-2 text-sm ${extractTab === 'experiences' ? 'border-terra font-medium text-terra' : 'border-transparent text-ink-secondary hover:text-ink'}`}>原子经历（{mergedExperiences.length}）</button>
       </div>
       <div className="scroll-hover mt-4 max-h-[460px] pr-2">
+        {mergedSkills.length === 0 && mergedExperiences.length === 0 && <div className="mb-3 rounded-lg border border-terra-border bg-terra-light px-4 py-3 text-sm text-terra">当前没有可展示的结构化结果。请返回上一步重新导入；如果记录中仍有原文，系统会在下一步自动重新调用 AI 提取。</div>}
         {extractTab === 'skills' ? (
           mergedSkills.length === 0 ? <div className="py-10 text-center text-sm text-ink-secondary">暂无能力数据</div> : (
             <div className="space-y-2">
@@ -365,9 +406,15 @@ export const JobsWorkflowView: React.FC<Props> = ({ onJobsChange, onExit, onNeed
     return null;
   };
 
-  const handleNext = () => { if (currentStep === 'import-resume') handleConfirmResumes(); else if (currentStep === 'extract-skills') { setCompletedSteps((steps) => Array.from(new Set<WorkflowStep>([...steps, 'extract-skills']))); setCurrentStep('input-job'); } else if (currentStep === 'input-job') handleMatch(); };
+  const handleNext = () => { if (currentStep === 'import-resume') void handleConfirmResumes(); else if (currentStep === 'extract-skills') { setCompletedSteps((steps) => Array.from(new Set<WorkflowStep>([...steps, 'extract-skills']))); setCurrentStep('input-job'); } else if (currentStep === 'input-job') void handleMatch(); };
 
-  return <div className="min-h-screen bg-canvas"><WorkflowProgressBar currentStep={currentStep} completedSteps={completedSteps} onStepClick={(step) => completedSteps.includes(step) && setCurrentStep(step)} /><main className="page-shell py-8"><div className="mx-auto max-w-6xl">{renderContent()}</div><div className="mt-6 flex justify-center"><div className="flex items-center gap-3">{STEP_ORDER.indexOf(currentStep) > 0 && currentStep !== 'generate' && <button onClick={goBack} className="btn-ghost">上一步</button>}{currentStep === 'import-resume' || currentStep === 'extract-skills' || currentStep === 'input-job' ? <button onClick={handleNext} disabled={!canNext || loading} className="btn-primary">{currentStep === 'input-job' ? '开始匹配分析并保存' : '下一步'}</button> : null}<button onClick={() => { saveWorkflowDraft({ step: currentStep, sourceMode, resumeIds: selectedResumeIds, jobInput: jdInput, parsedJd: parsedJd || undefined, extractedSkills: mergedSkills, extractedExperiences: mergedExperiences }); onExit(); }} className="btn-ghost">保存并退出</button></div></div></main></div>;
+  const handleExit = async () => {
+    if (currentStep === 'generate' && generated) await clearWorkflowDraft();
+    else saveWorkflowDraft({ step: currentStep, sourceMode, resumeIds: selectedResumeIds, jobInput: jdInput, parsedJd: parsedJd || undefined, extractedSkills: mergedSkills, extractedExperiences: mergedExperiences });
+    onExit();
+  };
+
+  return <div className="min-h-screen bg-canvas"><WorkflowProgressBar currentStep={currentStep} completedSteps={completedSteps} onStepClick={(step) => completedSteps.includes(step) && setCurrentStep(step)} /><main className="page-shell py-8"><div className="mx-auto max-w-6xl">{renderContent()}</div><div className="mt-6 flex justify-center"><div className="flex items-center gap-3">{STEP_ORDER.indexOf(currentStep) > 0 && currentStep !== 'generate' && <button onClick={goBack} className="btn-ghost">上一步</button>}{currentStep === 'import-resume' || currentStep === 'extract-skills' || currentStep === 'input-job' ? <button onClick={handleNext} disabled={!canNext || loading} className="btn-primary">{currentStep === 'input-job' ? '开始匹配分析并保存' : '下一步'}</button> : null}<button onClick={() => void handleExit()} className="btn-ghost">{currentStep === 'generate' && generated ? '退出' : '保存并退出'}</button></div></div></main></div>;
 };
 
 const Metric: React.FC<{ label: string; value: number }> = ({ label, value }) => <div className="rounded-lg bg-canvas p-4 text-center"><p className="text-2xl font-semibold text-terra">{value}</p><p className="mt-1 text-xs text-ink-secondary">{label}</p></div>;

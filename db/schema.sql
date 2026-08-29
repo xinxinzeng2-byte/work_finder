@@ -4,8 +4,11 @@ CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
+  deepseek_api_key_encrypted TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deepseek_api_key_encrypted TEXT;
 
 CREATE TABLE IF NOT EXISTS resumes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

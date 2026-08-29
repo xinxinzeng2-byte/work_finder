@@ -12,6 +12,7 @@ const KEYS = {
   RESUMES: 'wf_resumes',
   CURRENT_RESUME_ID: 'wf_current_resume_id',
   API_KEY: 'deepseek_api_key',
+  API_KEY_CONFIGURED: 'deepseek_api_key_configured',
   SAVED_JOBS: 'wf_saved_jobs',
   GENERATED: 'wf_generated',
   WORKFLOW_DRAFT: 'wf_workflow_draft',
@@ -47,34 +48,47 @@ function normalizeStringArray(value: unknown): string[] {
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+    } catch {
+      // 继续按空对象处理，避免历史脏数据让整个页面白屏。
+    }
+  }
+  return {};
 }
 
 /** 保证历史简历缺少数组字段时，能力库和工作流仍能安全渲染。 */
 function normalizeParsedResume(value: unknown): ParsedResume {
   const source = asRecord(value);
   const basicInfo = asRecord(source.basicInfo);
-  const skills = Array.isArray(source.skills) ? source.skills.map((value) => {
+  // 兼容早期版本可能使用的 abilities / skillList 字段。
+  const rawSkills = Array.isArray(source.skills) ? source.skills : Array.isArray(source.abilities) ? source.abilities : source.skillList;
+  const skills = Array.isArray(rawSkills) ? rawSkills.map((value) => {
     const skill = asRecord(value);
     return {
       id: typeof skill.id === 'string' ? skill.id : generateId(),
-      category: typeof skill.category === 'string' ? skill.category : '',
-      name: typeof skill.name === 'string' ? skill.name : '',
-      level: typeof skill.level === 'string' ? skill.level : '',
-      evidence: typeof skill.evidence === 'string' ? skill.evidence : '',
+      category: typeof skill.category === 'string' ? skill.category : typeof skill.type === 'string' ? skill.type : '',
+      name: typeof skill.name === 'string' ? skill.name : typeof skill.skill === 'string' ? skill.skill : typeof skill.ability === 'string' ? skill.ability : '',
+      level: typeof skill.level === 'string' ? skill.level : typeof skill.proficiency === 'string' ? skill.proficiency : '',
+      evidence: typeof skill.evidence === 'string' ? skill.evidence : typeof skill.description === 'string' ? skill.description : '',
     };
   }) : [];
-  const experiences = Array.isArray(source.experiences) ? source.experiences.map((value) => {
+  // 兼容早期版本可能使用的 workExperience / workExperiences 字段。
+  const rawExperiences = Array.isArray(source.experiences) ? source.experiences : Array.isArray(source.workExperiences) ? source.workExperiences : source.workExperience;
+  const experiences = Array.isArray(rawExperiences) ? rawExperiences.map((value) => {
     const experience = asRecord(value);
     return {
       id: typeof experience.id === 'string' ? experience.id : generateId(),
-      company: typeof experience.company === 'string' ? experience.company : '',
-      role: typeof experience.role === 'string' ? experience.role : '',
-      period: typeof experience.period === 'string' ? experience.period : '',
+      company: typeof experience.company === 'string' ? experience.company : typeof experience.companyName === 'string' ? experience.companyName : '',
+      role: typeof experience.role === 'string' ? experience.role : typeof experience.title === 'string' ? experience.title : typeof experience.position === 'string' ? experience.position : '',
+      period: typeof experience.period === 'string' ? experience.period : typeof experience.time === 'string' ? experience.time : '',
       description: typeof experience.description === 'string' ? experience.description : undefined,
-      achievements: normalizeStringArray(experience.achievements),
+      achievements: normalizeStringArray(experience.achievements || experience.highlights || experience.achievement),
       skillsUsed: normalizeStringArray(experience.skillsUsed),
-      rawText: typeof experience.rawText === 'string' ? experience.rawText : '',
+      rawText: typeof experience.rawText === 'string' ? experience.rawText : typeof experience.description === 'string' ? experience.description : '',
     };
   }) : [];
   return {
@@ -86,7 +100,7 @@ function normalizeParsedResume(value: unknown): ParsedResume {
       yearsOfExperience: typeof basicInfo.yearsOfExperience === 'number' ? basicInfo.yearsOfExperience : undefined,
       city: typeof basicInfo.city === 'string' ? basicInfo.city : undefined,
     },
-    rawText: typeof source.rawText === 'string' ? source.rawText : '',
+    rawText: typeof source.rawText === 'string' ? source.rawText : typeof source.text === 'string' ? source.text : typeof source.content === 'string' ? source.content : '',
     skills,
     experiences,
   };
@@ -172,7 +186,7 @@ const pendingSyncs = new Set<Promise<unknown>>();
 const cloudWriteChains = new Map<string, Promise<unknown>>();
 
 /** 将同一条数据的云端写入串行化，避免保存/更新请求乱序抵消最新状态。 */
-function enqueueCloudWrite(key: string, operation: () => Promise<unknown>): void {
+function enqueueCloudWrite(key: string, operation: () => Promise<unknown>): Promise<void> {
   const previous = cloudWriteChains.get(key) || Promise.resolve();
   const next = previous.then(operation, operation);
   const settled = next.then(() => undefined, () => undefined);
@@ -182,6 +196,8 @@ function enqueueCloudWrite(key: string, operation: () => Promise<unknown>): void
     () => { if (cloudWriteChains.get(key) === settled) cloudWriteChains.delete(key); },
   );
   background(next);
+  // 调用方可以等待本次队列已结束；失败由 background 统一记录，不向未等待的普通保存调用抛出未处理拒绝。
+  return next.then(() => undefined, () => undefined);
 }
 
 /** 退出登录前等待当前账号所有已发起的云端写入完成。 */
@@ -327,12 +343,16 @@ export interface ResumeItem {
 function normalizeResumeItem(value: unknown): ResumeItem {
   const item = asRecord(value);
   const targetJob = asRecord(item.targetJob);
+  const originalText = typeof item.originalText === 'string' ? item.originalText : undefined;
+  const resume = normalizeParsedResume(item.resume);
+  // 部分历史云端记录把原文存在 originalText，但 resume.rawText 为空；补回原文后第 2 步才能自动重提取。
+  if (!resume.rawText && originalText) resume.rawText = originalText;
   return {
     id: typeof item.id === 'string' ? item.id : generateId(),
     name: typeof item.name === 'string' ? item.name : '未命名简历',
     type: item.type === 'customized' ? 'customized' : 'original',
-    resume: normalizeParsedResume(item.resume),
-    originalText: typeof item.originalText === 'string' ? item.originalText : undefined,
+    resume,
+    originalText,
     fileName: typeof item.fileName === 'string' ? item.fileName : undefined,
     uploadedAt: typeof item.uploadedAt === 'string' ? item.uploadedAt : new Date(0).toISOString(),
     isCurrent: item.isCurrent === true,
@@ -456,6 +476,23 @@ export function updateCurrentResume(resume: ParsedResume): void {
   localStorage.setItem(KEYS.CURRENT_RESUME_ID, current.id);
   localStorage.setItem(KEYS.RESUME, JSON.stringify(resume));
   if (shouldSync()) enqueueCloudWrite(`resume:${current.id}`, () => patchResume(current));
+}
+
+/** 更新指定原始简历的结构化结果，用于历史数据重新提取后的回写。 */
+export function updateResumeData(id: string, resume: ParsedResume): void {
+  const resumes = loadResumes();
+  const item = resumes.find((candidate) => candidate.id === id);
+  if (!item) return;
+  item.resume = resume;
+  localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
+  if (item.isCurrent || localStorage.getItem(KEYS.CURRENT_RESUME_ID) === id) {
+    localStorage.setItem(KEYS.CURRENT_RESUME_ID, id);
+    localStorage.setItem(KEYS.RESUME, JSON.stringify(resume));
+  }
+  if (shouldSync()) {
+    // 新记录使用 UUID；兼容尚未完成迁移的旧本地 ID 时重新 POST，避免 PATCH 直接被 400 拒绝。
+    enqueueCloudWrite(`resume:${id}`, () => isUuid(id) ? patchResume(item) : syncResume(item));
+  }
 }
 
 export function setCurrentResume(id: string): void {
@@ -650,8 +687,48 @@ export function getApiKey(): string | null {
   return localStorage.getItem(KEYS.API_KEY);
 }
 
+/** 云端已配置时不在浏览器保存明文，只保存一个是否已配置的标记。 */
+export function hasApiKey(): boolean {
+  return !!getApiKey() || localStorage.getItem(KEYS.API_KEY_CONFIGURED) === 'true';
+}
+
 export function saveApiKey(key: string): void {
-  localStorage.setItem(KEYS.API_KEY, key.trim());
+  const value = key.trim();
+  if (value) {
+    localStorage.setItem(KEYS.API_KEY, value);
+    localStorage.setItem(KEYS.API_KEY_CONFIGURED, 'true');
+  } else {
+    localStorage.removeItem(KEYS.API_KEY);
+    localStorage.removeItem(KEYS.API_KEY_CONFIGURED);
+  }
+}
+
+/** 登录后只读取云端是否已配置，不把 API Key 明文下发到浏览器。 */
+export async function hydrateApiKey(): Promise<boolean> {
+  if (!isCloudMode || !localStorage.getItem('auth_token')) return hasApiKey();
+  try {
+    const result = await request<{ configured: boolean }>('/auth/api-key');
+    if (result.configured) {
+      localStorage.setItem(KEYS.API_KEY_CONFIGURED, 'true');
+      localStorage.removeItem(KEYS.API_KEY);
+      return true;
+    }
+    localStorage.removeItem(KEYS.API_KEY_CONFIGURED);
+    // 即使浏览器里残留旧 Key，也要让当前账号首次登录弹出设置，促使用户保存到当前账号。
+    return false;
+  } catch (error) {
+    console.warn('读取云端 API Key 状态失败', error);
+    return hasApiKey();
+  }
+}
+
+/** 将当前输入的 API Key 加密保存到当前登录用户的数据库。 */
+export async function saveApiKeyToCloud(key: string): Promise<void> {
+  if (!isCloudMode || !localStorage.getItem('auth_token')) return;
+  await request('/auth/api-key', { method: 'PUT', body: JSON.stringify({ apiKey: key.trim() }) });
+  localStorage.setItem(KEYS.API_KEY_CONFIGURED, 'true');
+  // 云端保存成功后移除浏览器明文，仅保留配置状态。
+  localStorage.removeItem(KEYS.API_KEY);
 }
 
 export interface SavedJob {
@@ -721,13 +798,13 @@ export function loadSavedJobs(): SavedJob[] {
   }
 }
 
-export function saveJob(job: SavedJob): void {
+export function saveJob(job: SavedJob): Promise<void> {
   const jobs = loadSavedJobs();
   const index = jobs.findIndex((item) => item.id === job.id);
   if (index >= 0) jobs[index] = job;
   else jobs.push(job);
   localStorage.setItem(KEYS.SAVED_JOBS, JSON.stringify(jobs));
-  if (shouldSync()) enqueueCloudWrite(`job:${job.id}`, () => syncJob(job));
+  return shouldSync() ? enqueueCloudWrite(`job:${job.id}`, () => syncJob(job)) : Promise.resolve();
 }
 
 export function updateJob(id: string, updates: Partial<SavedJob>): void {
@@ -830,9 +907,17 @@ export function loadWorkflowDraft(): WorkflowDraft | null {
   }
 }
 
-export function clearWorkflowDraft(): void {
+export async function clearWorkflowDraft(): Promise<void> {
   localStorage.removeItem(KEYS.WORKFLOW_DRAFT);
-  if (shouldSync()) enqueueCloudWrite('draft', () => request('/data/draft', { method: 'DELETE' }));
+  if (shouldSync()) {
+    try {
+      // 等待同一条草稿写入队列，避免刷新时 GET 先于 DELETE 读到旧草稿。
+      await enqueueCloudWrite('draft', () => request('/data/draft', { method: 'DELETE' }));
+    } catch (error) {
+      // 本地状态已经清理；云端同步失败由后台任务记录，下一次进入时仍可重试。
+      console.warn('清理云端流程草稿失败', error);
+    }
+  }
 }
 
 export function hasValidDraft(): boolean {

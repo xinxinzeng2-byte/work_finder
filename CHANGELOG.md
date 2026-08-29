@@ -1,5 +1,43 @@
 # 更新日志
 
+## 简历AI提取修复、API key云端存储、草稿刷新前后一致性修复（2026-08-29）
+
+- 修复岗位详情页生成定制简历后未清理工作流草稿的问题，等待云端草稿删除完成，避免刷新后重新出现旧提醒。
+- 防止已完成生成的工作流通过“保存并退出”再次写入草稿，并兼容 Preview 中的历史简历、岗位和草稿数据。
+- 修复当前简历状态缺失时点击“分析详情”出现空白的问题，增加岗位简历快照兜底和明确的异常提示。
+- “分析详情”统一展示已保存的 AI 匹配分析结果，岗位分析成功后先持久化结果再清理草稿，后续进入详情不重复调用 AI。
+- 完善简历 AI 能力提取：正常导入只提取一次；历史记录缺少结构化能力和经历但保留原文时自动补提取并回写，失败时不保存空结果。
+- 将 Preview/生产环境的 DeepSeek API Key 按用户使用 AES-256-GCM 加密保存到数据库，补充 API、迁移脚本、环境变量和部署说明。
+
+### 涉及文件
+
+- `DATABASE_PLAN.md`
+- `DATABASE_SCHEMA.md`
+- `DEPLOY.md`
+- `README.md`
+- `api/_lib/apiKey.ts`
+- `api/auth/[action].ts`
+- `api/generate.ts`
+- `api/match.ts`
+- `api/parse-jd.ts`
+- `api/parse.ts`
+- `api/supplement.ts`
+- `api/test-key.ts`
+- `client/src/App.tsx`
+- `client/src/components/SettingsModal.tsx`
+- `client/src/components/views/AnalyzeView.tsx`
+- `client/src/components/views/JobApplicationsView.tsx`
+- `client/src/components/views/JobsWorkflowView.tsx`
+- `client/src/services/api.ts`
+- `client/src/utils/storage.ts`
+- `db/migrations/002_add_encrypted_api_key.sql`
+- `db/schema.sql`
+- `server/.env.example`
+- `server/src/controllers/aiController.ts`
+- `server/src/routes/authRoutes.ts`
+- `server/src/services/deepseekService.ts`
+- `server/src/services/userApiKeyService.ts`
+
 ## 完善 Preview 历史数据兼容并修复页面白屏（2026-08-29）
 
 - 统一规范化简历、岗位和流程草稿中的历史数据格式。

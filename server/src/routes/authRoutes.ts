@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { getSql } from '../services/database';
 import { createToken, getUserId, hashPassword, verifyPassword } from '../services/authService';
 import { isValidEmail, normalizeEmail } from '../services/emailValidation';
+import { clearUserApiKey, saveUserApiKey } from '../services/userApiKeyService';
 
 const router = Router();
 
@@ -15,6 +16,41 @@ function withTimeout<T>(operation: Promise<T>, milliseconds = 6_000): Promise<T>
 function bodyObject(req: Request): Record<string, unknown> {
   return req.body && typeof req.body === 'object' ? req.body as Record<string, unknown> : {};
 }
+
+router.get('/api-key', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    const sql = getSql();
+    const [row] = await withTimeout<any[]>(sql`SELECT deepseek_api_key_encrypted FROM users WHERE id = ${userId}`);
+    res.json({ configured: !!row?.deepseek_api_key_encrypted });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') { res.status(401).json({ error: '未登录或登录已过期' }); return; }
+    res.status(500).json({ error: '读取 API Key 状态失败' });
+  }
+});
+
+router.put('/api-key', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    const apiKey = bodyObject(req).apiKey;
+    if (typeof apiKey !== 'string' || !apiKey.trim()) { res.status(400).json({ error: 'API Key 不能为空' }); return; }
+    await withTimeout(saveUserApiKey(userId, apiKey.trim()));
+    res.status(204).end();
+  } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') { res.status(401).json({ error: '未登录或登录已过期' }); return; }
+    res.status(500).json({ error: 'API Key 保存失败' });
+  }
+});
+
+router.delete('/api-key', async (req: Request, res: Response) => {
+  try {
+    await withTimeout(clearUserApiKey(getUserId(req)));
+    res.status(204).end();
+  } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') { res.status(401).json({ error: '未登录或登录已过期' }); return; }
+    res.status(500).json({ error: 'API Key 删除失败' });
+  }
+});
 
 router.post('/register', async (req: Request, res: Response) => {
   const body = bodyObject(req);

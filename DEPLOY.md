@@ -48,7 +48,7 @@ vercel --prod
 
 ### Q: API Key 安全吗？
 
-用户的 DeepSeek API Key 保存在他们自己的浏览器 localStorage，通过请求头传给后端。后端不存储 Key，部署时也不需要在 Vercel 配置环境变量。
+Preview/生产环境中，用户的 DeepSeek API Key 会按账号使用 AES-256-GCM 加密后保存到数据库，后端读取后解密调用，数据库和浏览器不保存明文。部署前需在 Neon 执行 `db/migrations/002_add_encrypted_api_key.sql`，并确保 Vercel 的 `JWT_SECRET` 一致；也可额外配置独立的 `API_KEY_ENCRYPTION_SECRET`。
 
 ### Q: 免费额度够用吗？
 

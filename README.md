@@ -34,6 +34,7 @@ npm run dev
 - 执行 `npm run dev` 时使用本地模式：不强制登录，简历、岗位和流程草稿保存在浏览器 `localStorage`，因此不依赖 Neon 数据库。
 - Vercel Preview/生产构建使用云端模式：启用邮箱登录，并将数据同步到 Neon 数据库。
 - 如需手动覆盖模式，可设置 `VITE_DATA_MODE=local` 或 `VITE_DATA_MODE=cloud`。
+- Preview/生产环境的 DeepSeek API Key 按用户使用 AES-256-GCM 加密后保存到数据库；数据库只保存密文。
 
 ## 使用流程
 

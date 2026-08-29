@@ -6,7 +6,7 @@ import { AnalyzeView } from './components/views/AnalyzeView';
 import JobApplicationsView from './components/views/JobApplicationsView';
 import JobsWorkflowView from './components/views/JobsWorkflowView';
 import ResumeManagerView from './components/views/ResumeManagerView';
-import { authGet, flushCloudSync, getApiKey, hydrateFromCloud, isCloudMode, loadCurrentResume, loadResumes, loadSavedJobs, updateCurrentResume, type SavedJob } from './utils/storage';
+import { authGet, flushCloudSync, hasApiKey, hydrateApiKey, hydrateFromCloud, isCloudMode, loadCurrentResume, loadResumes, loadSavedJobs, type SavedJob } from './utils/storage';
 import type { ParsedResume } from './types';
 
 const App: React.FC = () => {
@@ -14,7 +14,7 @@ const App: React.FC = () => {
   const [authChecked, setAuthChecked] = useState(false);
   const [user, setUser] = useState<{ id: string; email: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [hasApiKey, setHasApiKey] = useState(!!getApiKey());
+  const [apiKeyConfigured, setApiKeyConfigured] = useState(hasApiKey());
   const [resume, setResume] = useState<ParsedResume | null>(loadCurrentResume());
   const [savedJobs, setSavedJobs] = useState<SavedJob[]>(loadSavedJobs());
   const [workflowOpen, setWorkflowOpen] = useState(false);
@@ -33,6 +33,7 @@ const App: React.FC = () => {
       const currentUser = authenticatedUser || (await authGet<{ user: { id: string; email: string } }>('/auth/me')).user;
       setUser(currentUser);
       await hydrateFromCloud(currentUser.id);
+      setApiKeyConfigured(await hydrateApiKey());
       setResume(loadCurrentResume());
       setSavedJobs(loadSavedJobs());
     } catch (error) {
@@ -63,14 +64,14 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (authChecked && user && !getApiKey()) setSettingsOpen(true);
-  }, [authChecked, user]);
+    if (authChecked && user && !apiKeyConfigured) setSettingsOpen(true);
+  }, [authChecked, user, apiKeyConfigured]);
 
   const refreshJobs = () => setSavedJobs(loadSavedJobs());
   const refreshResume = () => { setResume(loadCurrentResume()); };
   const handleViewChange = (view: SidebarView) => { setSelectedJob(null); setWorkflowOpen(false); setCurrentView(view); };
   const openWorkflow = () => { setSelectedJob(null); setWorkflowOpen(true); setCurrentView('jobs'); };
-  const handleResumeUpdate = (updated: ParsedResume | null) => { setResume(updated); if (updated) updateCurrentResume(updated); };
+  const handleResumeUpdate = (updated: ParsedResume) => { setResume(updated); };
   const handleAuthenticated = async (authenticatedUser: { id: string; email: string }) => {
     await loadCloudSession(authenticatedUser);
   };
@@ -95,12 +96,12 @@ const App: React.FC = () => {
     }
   };
 
-  return <div className="min-h-screen bg-canvas"><Sidebar currentView={currentView} onViewChange={handleViewChange} onOpenSettings={() => setSettingsOpen(true)} onLogout={handleLogout} showLogout={isCloudMode} jobCount={savedJobs.length} resumeCount={loadResumes().filter((item) => item.type === 'original').length} hasApiKey={hasApiKey} userEmail={user?.email} /><main className="min-h-screen pl-60">
+  return <div className="min-h-screen bg-canvas"><Sidebar currentView={currentView} onViewChange={handleViewChange} onOpenSettings={() => setSettingsOpen(true)} onLogout={handleLogout} showLogout={isCloudMode} jobCount={savedJobs.length} resumeCount={loadResumes().filter((item) => item.type === 'original').length} hasApiKey={apiKeyConfigured} userEmail={user?.email} /><main className="min-h-screen pl-60">
     {currentView === 'jobs' && workflowOpen && <JobsWorkflowView onJobsChange={refreshJobs} onExit={() => setWorkflowOpen(false)} onNeedApiKey={() => setSettingsOpen(true)} />}
-    {currentView === 'jobs' && !workflowOpen && selectedJob && resume && <div className="page-shell"><button onClick={() => setSelectedJob(null)} className="btn-link mb-5">← 返回岗位投递</button><AnalyzeView key={selectedJob.id} resume={resume} onResumeUpdate={handleResumeUpdate} onJobSaved={refreshJobs} initialJob={selectedJob} /></div>}
+    {currentView === 'jobs' && !workflowOpen && selectedJob && <div className="page-shell"><button onClick={() => setSelectedJob(null)} className="btn-link mb-5">← 返回岗位投递</button><AnalyzeView key={selectedJob.id} resume={selectedJob.resumeSnapshot || resume} onResumeUpdate={handleResumeUpdate} onJobSaved={refreshJobs} initialJob={selectedJob} /></div>}
     {currentView === 'jobs' && !workflowOpen && !selectedJob && <JobApplicationsView jobs={savedJobs} onNewJob={openWorkflow} onContinueDraft={openWorkflow} onSelectJob={setSelectedJob} onJobsChange={refreshJobs} />}
     {currentView === 'resumes' && <ResumeManagerView onResumeUpdate={(updated) => { setResume(updated); refreshResume(); }} onNeedApiKey={() => setSettingsOpen(true)} />}
-  </main><SettingsModal open={settingsOpen} onClose={() => { setSettingsOpen(false); setHasApiKey(!!getApiKey()); }} /></div>;
+  </main><SettingsModal open={settingsOpen} onClose={() => { setSettingsOpen(false); setApiKeyConfigured(hasApiKey()); }} /></div>;
 };
 
 export default App;

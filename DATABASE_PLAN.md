@@ -22,7 +22,7 @@ Neon Postgres（你现有账号，新建 Project）
 ```
 
 - **数据隔离**：所有业务表带 `user_id`，每个接口按登录用户过滤，用户只能读写自己的数据。
-- **保留在 localStorage 的只有两项**：登录 token、DeepSeek API Key（按既定决策）。
+- **保留在 localStorage 的只有登录 token**；Preview/生产环境的 DeepSeek API Key 按用户加密保存到数据库。
 - **server/ 目录**（本地 Express）继续用于本地调试 AI 能力，不参与线上数据链路。
 
 ---
@@ -35,6 +35,7 @@ CREATE TABLE users (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email         TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
+  deepseek_api_key_encrypted TEXT,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
@@ -113,6 +114,7 @@ CREATE TABLE workflow_drafts (
 - 前端存 localStorage（key: `auth_token`），所有数据请求带 `Authorization: Bearer <token>`
 - 服务端公共函数 `getUserFromReq(req)`：校验签名 → 返回 userId；无 token/失效统一 401
 - 密钥：环境变量 `JWT_SECRET`（随机 64 位，Vercel + 本地 `.env` 各配一份）
+- API Key 加密：环境变量 `API_KEY_ENCRYPTION_SECRET`（建议使用独立随机值；未配置时回退使用 `JWT_SECRET`）
 
 ---
 
@@ -192,6 +194,7 @@ db/schema.sql           建表脚本（也可在 Neon SQL Editor 直接执行）
 |---|---|---|
 | `DATABASE_URL` | Vercel 项目 Settings → Environment Variables + 本地 `.env` | Neon 连接串（带 `?sslmode=require`） |
 | `JWT_SECRET` | 同上 | `openssl rand -hex 32` 生成 |
+| `API_KEY_ENCRYPTION_SECRET` | 同上 | `openssl rand -hex 32` 生成，建议与 `JWT_SECRET` 不同 |
 
 ---
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { parseJobDescription, analyzeMatch, generateFollowUpQuestion, formatFollowUpExperience } from '../../services/api';
-import { saveJob, type SavedJob, generateId } from '../../utils/storage';
+import { clearWorkflowDraft, saveJob, type SavedJob, generateId } from '../../utils/storage';
 import { saveResume } from '../../utils/storage';
 import type { ParsedResume, ParsedJobDescription, MatchResult, GeneratedResume, AtomicExperience } from '../../types';
 import { Loading, InlineLoading } from '../Loading';
@@ -8,8 +8,8 @@ import { ScoreBadge } from '../ScoreBadge';
 import { generateTailoredResume } from '../../services/api';
 
 interface Props {
-  resume: ParsedResume;
-  onResumeUpdate: (resume: ParsedResume) => void;
+  resume: ParsedResume | null;
+  onResumeUpdate?: (resume: ParsedResume) => void;
   onJobSaved: () => void;
   initialJob?: SavedJob | null;
 }
@@ -34,6 +34,10 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
   const [supplementedGaps, setSupplementedGaps] = useState<Set<string>>(new Set());
 
   const handleAnalyze = async () => {
+    if (!resume) {
+      setError('当前没有可用的简历，无法进行新的分析。请先在简历与能力库中导入简历。');
+      return;
+    }
     if (!jdText.trim()) {
       setError('请粘贴岗位描述');
       return;
@@ -56,8 +60,9 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
         matchResult,
         savedAt: new Date().toISOString(),
         status: 'analyzed',
+        resumeSnapshot: resume,
       };
-      saveJob(newJob);
+      await saveJob(newJob);
       setCurrentJobId(jobId);
       onJobSaved();
 
@@ -69,6 +74,10 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
   };
 
   const handleSelectGap = async (gap: string) => {
+    if (!resume) {
+      setError('当前没有可用的简历，暂时无法补录缺口。');
+      return;
+    }
     setSelectedGap(gap);
     setAnswer('');
     setChatHistory([]);
@@ -85,7 +94,7 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
   };
 
   const handleSubmitAnswer = async () => {
-    if (!answer.trim() || !selectedGap) return;
+    if (!resume || !answer.trim() || !selectedGap) return;
     setLoadingFormat(true);
     const userMsg = answer.trim();
     setChatHistory((prev) => [...prev, { role: 'user', content: userMsg }]);
@@ -108,7 +117,7 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
         ],
       };
       saveResume(updatedResume);
-      onResumeUpdate(updatedResume);
+      onResumeUpdate?.(updatedResume);
       setSupplementedGaps((prev) => new Set([...prev, selectedGap]));
 
       const aiReply = `已整理并存入经历库：\n\n${newExp.company} · ${newExp.role}\n${newExp.achievements.map((a) => `· ${a}`).join('\n')}`;
@@ -123,7 +132,10 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
   };
 
   const handleGenerate = async () => {
-    if (!jd) return;
+    if (!jd || !resume) {
+      setError('当前没有可用的简历，无法生成定制简历。请先在简历与能力库中导入简历。');
+      return;
+    }
     setStage('generating');
     try {
       const result = await generateTailoredResume(resume, jd, match || undefined);
@@ -131,16 +143,21 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
 
       // 更新收录的岗位
       if (currentJobId) {
-        saveJob({
+        await saveJob({
+          ...initialJob,
           id: currentJobId,
           jd,
           matchResult: match!,
-          savedAt: new Date().toISOString(),
+          savedAt: initialJob?.savedAt || new Date().toISOString(),
           status: 'completed',
           generatedResume: result,
+          resumeSnapshot: initialJob?.resumeSnapshot || resume,
         });
         onJobSaved();
       }
+      // 岗位详情页也可以完成定制简历生成；成功后原工作流草稿已经没有继续存在的必要。
+      // 否则返回岗位列表时会同时看到“已生成定制简历”和“未完成的岗位分析”。
+      await clearWorkflowDraft();
       setStage('done');
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成失败');

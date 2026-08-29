@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { SavedJob } from '../../utils/storage';
-import { clearWorkflowDraft, getApiKey, hasValidDraft, removeJob } from '../../utils/storage';
+import { clearWorkflowDraft, hasApiKey, hasValidDraft, removeJob } from '../../utils/storage';
 
 interface Props {
   jobs: SavedJob[];
@@ -34,7 +34,7 @@ export const JobApplicationsView: React.FC<Props> = ({ jobs, onNewJob, onContinu
       <button onClick={onNewJob} className="btn-primary"><span>＋</span> 新增岗位</button>
     </header>
 
-    {!getApiKey() && <div className="mb-5 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"><span>AI 功能还未启用，请先配置 API Key。</span><span className="text-xs">点击左侧「设置」</span></div>}
+    {!hasApiKey() && <div className="mb-5 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"><span>AI 功能还未启用，请先配置 API Key。</span><span className="text-xs">点击左侧「设置」</span></div>}
 
     {hasDraft && <div className="mb-5 flex items-center justify-between rounded-xl border border-terra-border bg-terra-light px-5 py-4"><div><p className="text-sm font-medium text-terra">有一个未完成的岗位分析</p><p className="mt-1 text-xs text-ink-secondary">草稿会保留你的简历来源和岗位输入，可以继续完成。</p></div><div className="flex items-center gap-3"><button onClick={handleAbandonDraft} className="h-9 px-2 text-xs text-ink-weak transition-colors hover:text-terra">放弃分析</button><button onClick={onContinueDraft} className="btn-ghost h-9 border-terra-border px-4 text-xs text-terra">继续分析</button></div></div>}
 

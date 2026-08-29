@@ -3,6 +3,7 @@ import { sql } from '../_lib/db';
 import { createToken, hashPassword, verifyPassword, getUserId } from '../_lib/auth';
 import { allowMethods, bodyObject, isNonEmptyString } from '../_lib/http';
 import { isValidEmail, normalizeEmail } from '../_lib/email';
+import { handleApiKey } from '../_lib/apiKey';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'private, no-store, max-age=0, must-revalidate');
@@ -10,6 +11,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (action === 'register') return register(req, res);
   if (action === 'login') return login(req, res);
   if (action === 'me') return me(req, res);
+  if (action === 'api-key') return handleApiKey(req, res);
   res.status(404).json({ error: '认证接口不存在' });
 }
 

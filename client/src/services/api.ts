@@ -5,7 +5,7 @@ import type {
   GeneratedResume,
   AtomicExperience,
 } from '../types';
-import { getApiKey } from '../utils/storage';
+import { getApiKey, isCloudMode } from '../utils/storage';
 
 // 本地由 Vite 代理到 Express，部署时由 vercel.json 映射到 Serverless Function。
 const BASE_URL = '/api/ai';
@@ -15,7 +15,8 @@ const BASE_URL = '/api/ai';
  */
 function buildHeaders(json: boolean = true): Record<string, string> {
   const headers: Record<string, string> = {};
-  const key = getApiKey();
+  // 云端模式由后端按登录用户从数据库读取并解密，避免把 API Key 明文放进请求头。
+  const key = isCloudMode ? null : getApiKey();
   if (key) {
     headers['x-deepseek-key'] = key;
   }
@@ -59,7 +60,7 @@ export async function parseResumeFile(file: File): Promise<ParsedResume> {
       try {
         const res = await fetch(`${BASE_URL}/parse-resume`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-deepseek-key': getApiKey() || '' },
+          headers: buildHeaders(),
           body: JSON.stringify({
             file: {
               data: (reader.result as string).split(',')[1], // 去掉 data:xxx;base64, 前缀

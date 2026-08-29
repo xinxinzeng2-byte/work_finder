@@ -32,6 +32,7 @@ users (1)
 | `id` | UUID | PRIMARY KEY，默认 `gen_random_uuid()` | 用户唯一标识，其他表通过它关联归属 |
 | `email` | TEXT | UNIQUE NOT NULL | 登录邮箱，一个邮箱只能注册一个账号 |
 | `password_hash` | TEXT | NOT NULL | bcrypt 哈希后的密码，不存明文 |
+| `deepseek_api_key_encrypted` | TEXT | 可空 | AES-256-GCM 加密后的 DeepSeek API Key，不存明文 |
 | `created_at` | TIMESTAMPTZ | NOT NULL，默认 `now()` | 注册时间 |
 
 ---
@@ -104,8 +105,11 @@ CREATE TABLE users (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email         TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
+  deepseek_api_key_encrypted TEXT,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deepseek_api_key_encrypted TEXT;
 
 CREATE TABLE resumes (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
