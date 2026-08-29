@@ -46,6 +46,95 @@ function normalizeStringArray(value: unknown): string[] {
   return value.split(',').map((item) => item.trim()).filter(Boolean);
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+/** 保证历史简历缺少数组字段时，能力库和工作流仍能安全渲染。 */
+function normalizeParsedResume(value: unknown): ParsedResume {
+  const source = asRecord(value);
+  const basicInfo = asRecord(source.basicInfo);
+  const skills = Array.isArray(source.skills) ? source.skills.map((value) => {
+    const skill = asRecord(value);
+    return {
+      id: typeof skill.id === 'string' ? skill.id : generateId(),
+      category: typeof skill.category === 'string' ? skill.category : '',
+      name: typeof skill.name === 'string' ? skill.name : '',
+      level: typeof skill.level === 'string' ? skill.level : '',
+      evidence: typeof skill.evidence === 'string' ? skill.evidence : '',
+    };
+  }) : [];
+  const experiences = Array.isArray(source.experiences) ? source.experiences.map((value) => {
+    const experience = asRecord(value);
+    return {
+      id: typeof experience.id === 'string' ? experience.id : generateId(),
+      company: typeof experience.company === 'string' ? experience.company : '',
+      role: typeof experience.role === 'string' ? experience.role : '',
+      period: typeof experience.period === 'string' ? experience.period : '',
+      description: typeof experience.description === 'string' ? experience.description : undefined,
+      achievements: normalizeStringArray(experience.achievements),
+      skillsUsed: normalizeStringArray(experience.skillsUsed),
+      rawText: typeof experience.rawText === 'string' ? experience.rawText : '',
+    };
+  }) : [];
+  return {
+    basicInfo: {
+      name: typeof basicInfo.name === 'string' ? basicInfo.name : undefined,
+      phone: typeof basicInfo.phone === 'string' ? basicInfo.phone : undefined,
+      email: typeof basicInfo.email === 'string' ? basicInfo.email : undefined,
+      education: typeof basicInfo.education === 'string' ? basicInfo.education : undefined,
+      yearsOfExperience: typeof basicInfo.yearsOfExperience === 'number' ? basicInfo.yearsOfExperience : undefined,
+      city: typeof basicInfo.city === 'string' ? basicInfo.city : undefined,
+    },
+    rawText: typeof source.rawText === 'string' ? source.rawText : '',
+    skills,
+    experiences,
+  };
+}
+
+function normalizeParsedJobDescription(value: unknown): ParsedJobDescription {
+  const source = asRecord(value);
+  const requirements = Array.isArray(source.requirements) ? source.requirements.map((value) => {
+    const requirement = asRecord(value);
+    return {
+      category: typeof requirement.category === 'string' ? requirement.category : '',
+      item: typeof requirement.item === 'string' ? requirement.item : '',
+      isHard: requirement.isHard === true,
+    };
+  }) : [];
+  return {
+    company: typeof source.company === 'string' ? source.company : undefined,
+    position: typeof source.position === 'string' ? source.position : undefined,
+    salary: typeof source.salary === 'string' ? source.salary : undefined,
+    city: typeof source.city === 'string' ? source.city : undefined,
+    requirements,
+    rawText: typeof source.rawText === 'string' ? source.rawText : '',
+  };
+}
+
+function normalizeMatchItems(value: unknown): MatchResult['gaps'] {
+  return Array.isArray(value) ? value.map((value) => {
+    const item = asRecord(value);
+    return {
+      requirement: typeof item.requirement === 'string' ? item.requirement : '',
+      matched: item.matched === true,
+      evidence: typeof item.evidence === 'string' ? item.evidence : undefined,
+      isHard: item.isHard === true,
+    };
+  }) : [];
+}
+
+function normalizeMatchResult(value: unknown): MatchResult {
+  const source = asRecord(value);
+  return {
+    score: typeof source.score === 'number' ? source.score : 0,
+    hardConditionCheck: normalizeMatchItems(source.hardConditionCheck),
+    skillMatch: normalizeMatchItems(source.skillMatch),
+    gaps: normalizeMatchItems(source.gaps),
+    summary: typeof source.summary === 'string' ? source.summary : '',
+  };
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('auth_token');
   const headers = new Headers(init.headers);
@@ -235,12 +324,36 @@ export interface ResumeItem {
   targetJob?: TargetJobInfo;
 }
 
+function normalizeResumeItem(value: unknown): ResumeItem {
+  const item = asRecord(value);
+  const targetJob = asRecord(item.targetJob);
+  return {
+    id: typeof item.id === 'string' ? item.id : generateId(),
+    name: typeof item.name === 'string' ? item.name : '未命名简历',
+    type: item.type === 'customized' ? 'customized' : 'original',
+    resume: normalizeParsedResume(item.resume),
+    originalText: typeof item.originalText === 'string' ? item.originalText : undefined,
+    fileName: typeof item.fileName === 'string' ? item.fileName : undefined,
+    uploadedAt: typeof item.uploadedAt === 'string' ? item.uploadedAt : new Date(0).toISOString(),
+    isCurrent: item.isCurrent === true,
+    sourceIds: normalizeStringArray(item.sourceIds),
+    sourceId: typeof item.sourceId === 'string' ? item.sourceId : undefined,
+    sourceFileData: typeof item.sourceFileData === 'string' ? item.sourceFileData : undefined,
+    sourceMimeType: typeof item.sourceMimeType === 'string' ? item.sourceMimeType : undefined,
+    targetJob: item.targetJob && typeof item.targetJob === 'object' ? {
+      position: typeof targetJob.position === 'string' ? targetJob.position : '',
+      company: typeof targetJob.company === 'string' ? targetJob.company : undefined,
+      matchScore: typeof targetJob.matchScore === 'number' ? targetJob.matchScore : 0,
+    } : undefined,
+  };
+}
+
 export function loadResumes(): ResumeItem[] {
   const data = localStorage.getItem(KEYS.RESUMES);
   if (data) {
     try {
-      return (JSON.parse(data) as ResumeItem[])
-        .map((item) => ({ ...item, sourceIds: normalizeStringArray(item.sourceIds) }))
+      return (JSON.parse(data) as unknown[])
+        .map(normalizeResumeItem)
         .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
     } catch {
       localStorage.removeItem(KEYS.RESUMES);
@@ -250,7 +363,7 @@ export function loadResumes(): ResumeItem[] {
   const legacy = localStorage.getItem(KEYS.RESUME);
   if (!legacy) return [];
   try {
-    const resume = JSON.parse(legacy) as ParsedResume;
+    const resume = normalizeParsedResume(JSON.parse(legacy));
     const item: ResumeItem = {
       id: 'legacy_resume',
       name: '原始简历 1',
@@ -402,7 +515,8 @@ const LEVEL_ORDER: Record<string, number> = { 了解: 1, 熟悉: 2, 熟练: 3, �
 export function mergeSkillsFromResumes(resumes: ResumeItem[]): MergedSkill[] {
   const map = new Map<string, MergedSkill>();
   resumes.filter((r) => r.type === 'original').forEach((item) => {
-    item.resume.skills.forEach((skill) => {
+    const skills = Array.isArray(item.resume?.skills) ? item.resume.skills : [];
+    skills.forEach((skill) => {
       const existing = map.get(skill.name);
       if (!existing) {
         map.set(skill.name, { ...skill, sources: [item.name] });
@@ -422,16 +536,20 @@ export function mergeSkillsFromResumes(resumes: ResumeItem[]): MergedSkill[] {
 export function mergeExperiencesFromResumes(resumes: ResumeItem[]): MergedExperience[] {
   const map = new Map<string, MergedExperience>();
   resumes.filter((r) => r.type === 'original').forEach((item) => {
-    item.resume.experiences.forEach((experience) => {
+    const experiences = Array.isArray(item.resume?.experiences) ? item.resume.experiences : [];
+    experiences.forEach((experience) => {
       const key = `${experience.company}-${experience.role}-${experience.period}`;
       const existing = map.get(key);
       if (!existing) {
-        map.set(key, { ...experience, achievements: [...experience.achievements], sources: [item.name] });
+        map.set(key, { ...experience, achievements: normalizeStringArray(experience.achievements), skillsUsed: normalizeStringArray(experience.skillsUsed), sources: [item.name] });
         return;
       }
       if (!existing.sources.includes(item.name)) existing.sources.push(item.name);
-      experience.achievements.forEach((achievement) => {
+      normalizeStringArray(experience.achievements).forEach((achievement) => {
         if (!existing.achievements.includes(achievement)) existing.achievements.push(achievement);
+      });
+      normalizeStringArray(experience.skillsUsed).forEach((skill) => {
+        if (!existing.skillsUsed.includes(skill)) existing.skillsUsed.push(skill);
       });
     });
   });
@@ -557,6 +675,30 @@ export interface SavedJob {
   supplementedGaps?: string[];
 }
 
+function normalizeSavedJob(value: unknown): SavedJob {
+  const job = asRecord(value);
+  return {
+    id: typeof job.id === 'string' ? job.id : generateId(),
+    jd: normalizeParsedJobDescription(job.jd),
+    matchResult: normalizeMatchResult(job.matchResult),
+    savedAt: typeof job.savedAt === 'string' ? job.savedAt : new Date(0).toISOString(),
+    status: ['analyzed', 'supplementing', 'generating', 'completed', 'generated'].includes(String(job.status)) ? job.status as SavedJob['status'] : 'analyzed',
+    generatedResume: job.generatedResume && typeof job.generatedResume === 'object' ? job.generatedResume as GeneratedResume : undefined,
+    sequenceNumber: typeof job.sequenceNumber === 'number' ? job.sequenceNumber : undefined,
+    jobName: typeof job.jobName === 'string' ? job.jobName : undefined,
+    company: typeof job.company === 'string' ? job.company : undefined,
+    intendedPosition: typeof job.intendedPosition === 'string' ? job.intendedPosition : undefined,
+    matchScore: typeof job.matchScore === 'number' ? job.matchScore : undefined,
+    mainGaps: normalizeStringArray(job.mainGaps),
+    analyzedAt: typeof job.analyzedAt === 'string' ? job.analyzedAt : undefined,
+    createdAt: typeof job.createdAt === 'string' ? job.createdAt : undefined,
+    updatedAt: typeof job.updatedAt === 'string' ? job.updatedAt : undefined,
+    sourceResumeIds: normalizeStringArray(job.sourceResumeIds),
+    resumeSnapshot: job.resumeSnapshot && typeof job.resumeSnapshot === 'object' ? normalizeParsedResume(job.resumeSnapshot) : undefined,
+    supplementedGaps: normalizeStringArray(job.supplementedGaps),
+  };
+}
+
 export function getNextSequenceNumber(): number {
   const jobs = loadSavedJobs();
   return jobs.reduce((max, job, index) => Math.max(max, job.sequenceNumber || index + 1), 0) + 1;
@@ -566,10 +708,8 @@ export function loadSavedJobs(): SavedJob[] {
   const data = localStorage.getItem(KEYS.SAVED_JOBS);
   if (!data) return [];
   try {
-    const jobs = JSON.parse(data) as SavedJob[];
+    const jobs = (JSON.parse(data) as unknown[]).map(normalizeSavedJob);
     jobs.forEach((job, index) => {
-      job.sourceResumeIds = normalizeStringArray(job.sourceResumeIds);
-      job.supplementedGaps = normalizeStringArray(job.supplementedGaps);
       job.analyzedAt ||= job.savedAt;
       job.createdAt ||= job.analyzedAt;
       job.updatedAt ||= job.analyzedAt;
@@ -628,6 +768,51 @@ export interface WorkflowDraft {
   };
 }
 
+function normalizeWorkflowDraft(value: unknown): WorkflowDraft | null {
+  const source = asRecord(value);
+  const data = asRecord(source.data);
+  const validSteps: WorkflowStepId[] = ['import-resume', 'extract-skills', 'input-job', 'ai-match', 'supplement', 'generate'];
+  const step = validSteps.includes(data.step as WorkflowStepId) ? data.step as WorkflowStepId : 'import-resume';
+  const extractedSkills = Array.isArray(data.extractedSkills) ? data.extractedSkills.map((value) => {
+    const skill = asRecord(value);
+    return {
+      id: typeof skill.id === 'string' ? skill.id : generateId(),
+      category: typeof skill.category === 'string' ? skill.category : '',
+      name: typeof skill.name === 'string' ? skill.name : '',
+      level: typeof skill.level === 'string' ? skill.level : '',
+      evidence: typeof skill.evidence === 'string' ? skill.evidence : '',
+      sources: normalizeStringArray(skill.sources),
+    };
+  }) : undefined;
+  const extractedExperiences = Array.isArray(data.extractedExperiences) ? data.extractedExperiences.map((value) => {
+    const experience = asRecord(value);
+    return {
+      id: typeof experience.id === 'string' ? experience.id : generateId(),
+      company: typeof experience.company === 'string' ? experience.company : '',
+      role: typeof experience.role === 'string' ? experience.role : '',
+      period: typeof experience.period === 'string' ? experience.period : '',
+      description: typeof experience.description === 'string' ? experience.description : undefined,
+      achievements: normalizeStringArray(experience.achievements),
+      skillsUsed: normalizeStringArray(experience.skillsUsed),
+      rawText: typeof experience.rawText === 'string' ? experience.rawText : '',
+      sources: normalizeStringArray(experience.sources),
+    };
+  }) : undefined;
+  return {
+    id: typeof source.id === 'string' ? source.id : generateId(),
+    updatedAt: typeof source.updatedAt === 'string' ? source.updatedAt : new Date().toISOString(),
+    data: {
+      step,
+      sourceMode: ['library', 'resumes', 'import'].includes(String(data.sourceMode)) ? data.sourceMode as WorkflowDraft['data']['sourceMode'] : 'resumes',
+      resumeIds: normalizeStringArray(data.resumeIds),
+      jobInput: typeof data.jobInput === 'string' ? data.jobInput : '',
+      parsedJd: data.parsedJd && typeof data.parsedJd === 'object' ? normalizeParsedJobDescription(data.parsedJd) : undefined,
+      extractedSkills,
+      extractedExperiences,
+    },
+  };
+}
+
 export function saveWorkflowDraft(data: WorkflowDraft['data']): void {
   const draft = { id: generateId(), updatedAt: new Date().toISOString(), data };
   localStorage.setItem(KEYS.WORKFLOW_DRAFT, JSON.stringify(draft));
@@ -638,7 +823,7 @@ export function loadWorkflowDraft(): WorkflowDraft | null {
   const data = localStorage.getItem(KEYS.WORKFLOW_DRAFT);
   if (!data) return null;
   try {
-    return JSON.parse(data) as WorkflowDraft;
+    return normalizeWorkflowDraft(JSON.parse(data));
   } catch {
     clearWorkflowDraft();
     return null;
