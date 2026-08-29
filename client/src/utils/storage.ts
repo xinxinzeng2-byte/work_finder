@@ -15,6 +15,8 @@ const KEYS = {
   SAVED_JOBS: 'wf_saved_jobs',
   GENERATED: 'wf_generated',
   WORKFLOW_DRAFT: 'wf_workflow_draft',
+  CLOUD_USER_ID: 'wf_cloud_user_id',
+  LEGACY_LOCAL_BACKUP: 'wf_legacy_local_backup',
 } as const;
 
 const API_BASE = '/api';
@@ -57,47 +59,108 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 function background(task: Promise<unknown>): void {
-  void task.catch((error) => console.warn('云端数据同步失败', error));
+  const trackedTask = task.catch((error) => console.warn('云端数据同步失败', error));
+  pendingSyncs.add(trackedTask);
+  void trackedTask.then(() => pendingSyncs.delete(trackedTask));
 }
 
-export async function hydrateFromCloud(): Promise<void> {
+const pendingSyncs = new Set<Promise<unknown>>();
+const cloudWriteChains = new Map<string, Promise<unknown>>();
+
+/** 将同一条数据的云端写入串行化，避免保存/更新请求乱序抵消最新状态。 */
+function enqueueCloudWrite(key: string, operation: () => Promise<unknown>): void {
+  const previous = cloudWriteChains.get(key) || Promise.resolve();
+  const next = previous.then(operation, operation);
+  const settled = next.then(() => undefined, () => undefined);
+  cloudWriteChains.set(key, settled);
+  void next.then(
+    () => { if (cloudWriteChains.get(key) === settled) cloudWriteChains.delete(key); },
+    () => { if (cloudWriteChains.get(key) === settled) cloudWriteChains.delete(key); },
+  );
+  background(next);
+}
+
+/** 退出登录前等待当前账号所有已发起的云端写入完成。 */
+export async function flushCloudSync(): Promise<void> {
+  while (pendingSyncs.size > 0) {
+    await Promise.all([...pendingSyncs]);
+  }
+}
+
+export async function hydrateFromCloud(userId?: string): Promise<void> {
   if (!shouldSync()) return;
+  // 只有已经明确归属于当前账号的本地数据才允许自动补传；没有标记的数据无法证明
+  // 属于哪个账号，必须保留为备份但不能自动上传，避免切换账号时串数据。
+  const localOwnerId = localStorage.getItem(KEYS.CLOUD_USER_ID);
+  const canMigrateLocalData = !!localOwnerId && !!userId && localOwnerId === userId;
+  const localResumes = loadResumes();
+  const localJobs = loadSavedJobs();
+  const localDraft = loadWorkflowDraft();
+  if (!localOwnerId && (localResumes.length > 0 || localJobs.length > 0 || localDraft)) {
+    localStorage.setItem(KEYS.LEGACY_LOCAL_BACKUP, JSON.stringify({ resumes: localResumes, jobs: localJobs, draft: localDraft }));
+  }
   const [resumeData, jobData, draftData] = await Promise.all([
     request<{ resumes: ResumeItem[] }>('/data/resumes'),
     request<{ jobs: SavedJob[] }>('/data/jobs'),
     request<{ draft: WorkflowDraft | null }>('/data/draft'),
   ]);
-  let resumes = resumeData.resumes;
-  let jobs = jobData.jobs;
-  if (resumes.length === 0 && jobs.length === 0) {
-    const localResumes = loadResumes();
-    const idMap = new Map(localResumes.map((item) => [item.id, isUuid(item.id) ? item.id : generateId()]));
-    if (localResumes.length) {
-      const migratedResumes = localResumes.map((item) => ({
+  let resumes = [...resumeData.resumes];
+  let jobs = [...jobData.jobs];
+
+  if (canMigrateLocalData) {
+    // 分别迁移两类数据。之前这里要求“简历和岗位同时为空”，导致云端已有简历、
+    // 但岗位保存请求失败/尚未完成时，本地岗位被空数组覆盖。
+    const resumeIdMap = new Map(localResumes.map((item) => [item.id, isUuid(item.id) ? item.id : generateId()]));
+    const migratedResumes: ResumeItem[] = localResumes
+      .map((item): ResumeItem => ({
         ...item,
-        id: idMap.get(item.id)!,
-        sourceIds: item.sourceIds?.map((id) => idMap.get(id) || id),
-      }));
-      await Promise.all(migratedResumes.map((item) => syncResume(item)));
-      resumes = migratedResumes;
-      const current = resumes.find((item) => item.isCurrent);
-      if (current) localStorage.setItem(KEYS.CURRENT_RESUME_ID, current.id);
-    }
-    const localJobs = loadSavedJobs();
-    if (localJobs.length) {
-      const migratedJobs = localJobs.map((job) => ({
+        id: resumeIdMap.get(item.id)!,
+        ...(item.sourceIds ? { sourceIds: item.sourceIds.map((id) => resumeIdMap.get(id) || id) } : {}),
+      }))
+      .filter((item) => !resumes.some((remote) => remote.id === item.id));
+    const migratedJobs: SavedJob[] = localJobs
+      .map((job): SavedJob => ({
         ...job,
         id: isUuid(job.id) ? job.id : generateId(),
-        sourceResumeIds: job.sourceResumeIds?.map((id) => idMap.get(id) || id),
-      }));
-      await Promise.all(migratedJobs.map((job) => syncJob(job)));
-      jobs = migratedJobs;
-    }
+        ...(job.sourceResumeIds ? { sourceResumeIds: job.sourceResumeIds.map((id) => resumeIdMap.get(id) || id) } : {}),
+      }))
+      .filter((job) => !jobs.some((remote) => remote.id === job.id));
+
+    // 上传失败时保留本地记录，避免一次网络抖动把界面清空；下次进入还会继续重试。
+    await Promise.all(migratedResumes.map(async (item) => {
+      try { await syncResume(item); } catch (error) { console.warn('迁移简历失败', error); }
+    }));
+    await Promise.all(migratedJobs.map(async (job) => {
+      try { await syncJob(job); } catch (error) { console.warn('迁移岗位失败', error); }
+    }));
+    // 即使本次上传失败，也先保留在本地，下一次进入时继续尝试同步。
+    resumes = [...resumes, ...migratedResumes];
+    jobs = [...jobs, ...migratedJobs];
   }
+
   localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
   localStorage.setItem(KEYS.SAVED_JOBS, JSON.stringify(jobs));
-  if (draftData.draft) localStorage.setItem(KEYS.WORKFLOW_DRAFT, JSON.stringify(draftData.draft));
-  else localStorage.removeItem(KEYS.WORKFLOW_DRAFT);
+  if (draftData.draft) {
+    localStorage.setItem(KEYS.WORKFLOW_DRAFT, JSON.stringify(draftData.draft));
+  } else if (canMigrateLocalData && localDraft) {
+    localStorage.setItem(KEYS.WORKFLOW_DRAFT, JSON.stringify(localDraft));
+    try {
+      await request('/data/draft', { method: 'PUT', body: JSON.stringify({ data: localDraft.data }) });
+    } catch (error) {
+      console.warn('迁移流程草稿失败', error);
+    }
+  } else {
+    localStorage.removeItem(KEYS.WORKFLOW_DRAFT);
+  }
+  const current = resumes.find((item) => item.type === 'original' && item.isCurrent);
+  if (current) {
+    localStorage.setItem(KEYS.CURRENT_RESUME_ID, current.id);
+    localStorage.setItem(KEYS.RESUME, JSON.stringify(current.resume));
+  } else {
+    localStorage.removeItem(KEYS.CURRENT_RESUME_ID);
+    localStorage.removeItem(KEYS.RESUME);
+  }
+  if (userId) localStorage.setItem(KEYS.CLOUD_USER_ID, userId);
 }
 
 export async function authRequest<T>(path: string, body: unknown): Promise<T> {
@@ -209,7 +272,7 @@ export function saveResume(
   }
   localStorage.setItem(KEYS.CURRENT_RESUME_ID, item.id);
   localStorage.setItem(KEYS.RESUME, JSON.stringify(resume));
-  if (shouldSync()) background(syncResume(item));
+  if (shouldSync()) enqueueCloudWrite(`resume:${item.id}`, () => syncResume(item));
   return item;
 }
 
@@ -231,7 +294,7 @@ export function saveCustomizedResume(
   };
   resumes.push(item);
   localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
-  if (shouldSync()) background(syncResume(item));
+  if (shouldSync()) enqueueCloudWrite(`resume:${item.id}`, () => syncResume(item));
   return item;
 }
 
@@ -256,7 +319,7 @@ export function updateCurrentResume(resume: ParsedResume): void {
   localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
   localStorage.setItem(KEYS.CURRENT_RESUME_ID, current.id);
   localStorage.setItem(KEYS.RESUME, JSON.stringify(resume));
-  if (shouldSync()) background(patchResume(current));
+  if (shouldSync()) enqueueCloudWrite(`resume:${current.id}`, () => patchResume(current));
 }
 
 export function setCurrentResume(id: string): void {
@@ -267,7 +330,7 @@ export function setCurrentResume(id: string): void {
   if (selected) {
     localStorage.setItem(KEYS.CURRENT_RESUME_ID, id);
     localStorage.setItem(KEYS.RESUME, JSON.stringify(selected.resume));
-    if (shouldSync()) background(patchResume(selected));
+    if (shouldSync()) enqueueCloudWrite(`resume:${selected.id}`, () => patchResume(selected));
   }
 }
 
@@ -287,7 +350,7 @@ export function deleteResume(id: string): void {
     }
   }
   localStorage.setItem(KEYS.RESUMES, JSON.stringify(remaining));
-  if (shouldSync()) background(request(`/data/resumes/${id}`, { method: 'DELETE' }));
+  if (shouldSync()) enqueueCloudWrite(`resume:${id}`, () => request(`/data/resumes/${id}`, { method: 'DELETE' }));
 }
 
 export function renameResume(id: string, name: string): void {
@@ -300,7 +363,7 @@ export function renameResume(id: string, name: string): void {
   });
   localStorage.setItem(KEYS.RESUMES, JSON.stringify(updated));
   const item = updated.find((resume) => resume.id === id);
-  if (item && shouldSync()) background(patchResume(item));
+  if (item && shouldSync()) enqueueCloudWrite(`resume:${item.id}`, () => patchResume(item));
 }
 
 export interface MergedSkill extends AtomicSkill {
@@ -377,7 +440,7 @@ export function updateMergedSkill(
       });
     });
   localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
-  if (shouldSync()) resumes.filter((item) => item.type === 'original').forEach((item) => background(patchResume(item)));
+  if (shouldSync()) resumes.filter((item) => item.type === 'original').forEach((item) => enqueueCloudWrite(`resume:${item.id}`, () => patchResume(item)));
 }
 
 /**
@@ -391,7 +454,7 @@ export function removeMergedSkill(name: string): void {
       item.resume.skills = item.resume.skills.filter((skill) => skill.name !== name);
     });
   localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
-  if (shouldSync()) resumes.filter((item) => item.type === 'original').forEach((item) => background(patchResume(item)));
+  if (shouldSync()) resumes.filter((item) => item.type === 'original').forEach((item) => enqueueCloudWrite(`resume:${item.id}`, () => patchResume(item)));
 }
 
 /**
@@ -422,7 +485,7 @@ export function updateMergedExperience(
       });
     });
   localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
-  if (shouldSync()) resumes.filter((item) => item.type === 'original').forEach((item) => background(patchResume(item)));
+  if (shouldSync()) resumes.filter((item) => item.type === 'original').forEach((item) => enqueueCloudWrite(`resume:${item.id}`, () => patchResume(item)));
 }
 
 /**
@@ -439,7 +502,7 @@ export function removeMergedExperience(key: string): void {
       });
     });
   localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
-  if (shouldSync()) resumes.filter((item) => item.type === 'original').forEach((item) => background(patchResume(item)));
+  if (shouldSync()) resumes.filter((item) => item.type === 'original').forEach((item) => enqueueCloudWrite(`resume:${item.id}`, () => patchResume(item)));
 }
 
 export function getApiKey(): string | null {
@@ -499,7 +562,7 @@ export function saveJob(job: SavedJob): void {
   if (index >= 0) jobs[index] = job;
   else jobs.push(job);
   localStorage.setItem(KEYS.SAVED_JOBS, JSON.stringify(jobs));
-  if (shouldSync()) background(syncJob(job));
+  if (shouldSync()) enqueueCloudWrite(`job:${job.id}`, () => syncJob(job));
 }
 
 export function updateJob(id: string, updates: Partial<SavedJob>): void {
@@ -507,13 +570,12 @@ export function updateJob(id: string, updates: Partial<SavedJob>): void {
   if (job) {
     const updated = { ...job, ...updates, updatedAt: new Date().toISOString() };
     saveJob(updated);
-    if (shouldSync()) background(syncJob(updated));
   }
 }
 
 export function removeJob(id: string): void {
   localStorage.setItem(KEYS.SAVED_JOBS, JSON.stringify(loadSavedJobs().filter((job) => job.id !== id)));
-  if (shouldSync()) background(request(`/data/jobs/${id}`, { method: 'DELETE' }));
+  if (shouldSync()) enqueueCloudWrite(`job:${id}`, () => request(`/data/jobs/${id}`, { method: 'DELETE' }));
 }
 
 export function saveGeneratedResume(resume: GeneratedResume): void {
@@ -544,7 +606,7 @@ export interface WorkflowDraft {
 export function saveWorkflowDraft(data: WorkflowDraft['data']): void {
   const draft = { id: generateId(), updatedAt: new Date().toISOString(), data };
   localStorage.setItem(KEYS.WORKFLOW_DRAFT, JSON.stringify(draft));
-  if (shouldSync()) background(request('/data/draft', { method: 'PUT', body: JSON.stringify({ data }) }));
+  if (shouldSync()) enqueueCloudWrite('draft', () => request('/data/draft', { method: 'PUT', body: JSON.stringify({ data }) }));
 }
 
 export function loadWorkflowDraft(): WorkflowDraft | null {
@@ -560,7 +622,7 @@ export function loadWorkflowDraft(): WorkflowDraft | null {
 
 export function clearWorkflowDraft(): void {
   localStorage.removeItem(KEYS.WORKFLOW_DRAFT);
-  if (shouldSync()) background(request('/data/draft', { method: 'DELETE' }));
+  if (shouldSync()) enqueueCloudWrite('draft', () => request('/data/draft', { method: 'DELETE' }));
 }
 
 export function hasValidDraft(): boolean {
@@ -594,5 +656,7 @@ export function exportData(): void {
 }
 
 export function generateId(): string {
-  return `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const random = Math.random().toString(16).slice(2).padEnd(24, '0').slice(0, 24);
+  return `${Date.now().toString(16).slice(-8)}-${random.slice(0, 4)}-4${random.slice(4, 7)}-8${random.slice(7, 10)}-${random.slice(10, 22)}`;
 }
