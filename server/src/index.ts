@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import aiRoutes from './routes/aiRoutes';
+import authRoutes from './routes/authRoutes';
+import dataRoutes from './routes/dataRoutes';
 
 dotenv.config();
 
@@ -26,6 +28,8 @@ app.get('/health', (_req, res) => {
 
 // API 路由
 app.use('/api/ai', aiRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/data', dataRoutes);
 
 // 错误处理中间件
 app.use(

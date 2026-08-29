@@ -15,6 +15,14 @@
 }
 
 @layer components {
+  /* 弹窗遮罩与顶层层级 */
+  .modal-backdrop {
+    @apply fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm;
+  }
+  .modal {
+    @apply z-[10000] w-full max-w-lg rounded-xl bg-white shadow-2xl;
+  }
+
   /* 页面标题区 */
   .page-shell {
     @apply mx-auto w-full max-w-[1440px] px-8 py-10;
@@ -96,6 +104,34 @@
     @apply border-[1.5px] border-dashed border-[#d4cfc9] rounded-[8px] bg-canvas;
     @apply text-center cursor-pointer transition-colors;
     @apply hover:bg-[#f3f0eb];
+  }
+
+  /* 平时隐藏滚动条，鼠标移入容器时显示 */
+  .scroll-hover {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+  }
+  .scroll-hover::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+    background: transparent;
+  }
+  .scroll-hover {
+    overflow-y: auto;
+  }
+  .scroll-hover:not(:hover)::-webkit-scrollbar-thumb {
+    background: transparent;
+  }
+  .scroll-hover:hover {
+    scrollbar-width: thin;
+    scrollbar-color: #d4cfc9 transparent;
+  }
+  .scroll-hover:hover::-webkit-scrollbar-thumb {
+    background: #d4cfc9;
+    border-radius: 3px;
+  }
+  .scroll-hover:hover::-webkit-scrollbar-thumb:hover {
+    background: #b8b2aa;
   }
 }
 

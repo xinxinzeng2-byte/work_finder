@@ -17,6 +17,116 @@ const KEYS = {
   WORKFLOW_DRAFT: 'wf_workflow_draft',
 } as const;
 
+const API_BASE = '/api';
+// 开发服务器默认使用本地模式；生产构建（包括 Vercel Preview）默认使用云端模式。
+// 如需覆盖，可设置 VITE_DATA_MODE=local 或 VITE_DATA_MODE=cloud。
+const DATA_MODE = import.meta.env.VITE_DATA_MODE || (import.meta.env.DEV ? 'local' : 'cloud');
+export const isCloudMode = DATA_MODE === 'cloud';
+
+function shouldSync(): boolean {
+  return isCloudMode && !!localStorage.getItem('auth_token');
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const token = localStorage.getItem('auth_token');
+  const headers = new Headers(init.headers);
+  headers.set('Content-Type', 'application/json');
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 12_000);
+  try {
+    const response = await fetch(`${API_BASE}${path}`, { ...init, headers, signal: controller.signal });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || `请求失败 (${response.status})`);
+    }
+    if (response.status === 204) return undefined as T;
+    return response.json() as Promise<T>;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('服务器响应超时，请检查本地后端和数据库配置');
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+function background(task: Promise<unknown>): void {
+  void task.catch((error) => console.warn('云端数据同步失败', error));
+}
+
+export async function hydrateFromCloud(): Promise<void> {
+  if (!shouldSync()) return;
+  const [resumeData, jobData, draftData] = await Promise.all([
+    request<{ resumes: ResumeItem[] }>('/data/resumes'),
+    request<{ jobs: SavedJob[] }>('/data/jobs'),
+    request<{ draft: WorkflowDraft | null }>('/data/draft'),
+  ]);
+  let resumes = resumeData.resumes;
+  let jobs = jobData.jobs;
+  if (resumes.length === 0 && jobs.length === 0) {
+    const localResumes = loadResumes();
+    const idMap = new Map(localResumes.map((item) => [item.id, isUuid(item.id) ? item.id : generateId()]));
+    if (localResumes.length) {
+      const migratedResumes = localResumes.map((item) => ({
+        ...item,
+        id: idMap.get(item.id)!,
+        sourceIds: item.sourceIds?.map((id) => idMap.get(id) || id),
+      }));
+      await Promise.all(migratedResumes.map((item) => syncResume(item)));
+      resumes = migratedResumes;
+      const current = resumes.find((item) => item.isCurrent);
+      if (current) localStorage.setItem(KEYS.CURRENT_RESUME_ID, current.id);
+    }
+    const localJobs = loadSavedJobs();
+    if (localJobs.length) {
+      const migratedJobs = localJobs.map((job) => ({
+        ...job,
+        id: isUuid(job.id) ? job.id : generateId(),
+        sourceResumeIds: job.sourceResumeIds?.map((id) => idMap.get(id) || id),
+      }));
+      await Promise.all(migratedJobs.map((job) => syncJob(job)));
+      jobs = migratedJobs;
+    }
+  }
+  localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
+  localStorage.setItem(KEYS.SAVED_JOBS, JSON.stringify(jobs));
+  if (draftData.draft) localStorage.setItem(KEYS.WORKFLOW_DRAFT, JSON.stringify(draftData.draft));
+  else localStorage.removeItem(KEYS.WORKFLOW_DRAFT);
+}
+
+export async function authRequest<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function authGet<T>(path: string): Promise<T> {
+  return request<T>(path);
+}
+
+function syncResume(item: ResumeItem): Promise<unknown> {
+  const payload = isUuid(item.id) ? item : { ...item, id: undefined };
+  return request('/data/resumes', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+function patchResume(item: ResumeItem): Promise<unknown> {
+  const updates: Promise<unknown>[] = [
+    request(`/data/resumes/${item.id}`, { method: 'PATCH', body: JSON.stringify({ resume: item.resume }) }),
+    request(`/data/resumes/${item.id}`, { method: 'PATCH', body: JSON.stringify({ name: item.name }) }),
+  ];
+  if (item.isCurrent) updates.push(request(`/data/resumes/${item.id}`, { method: 'PATCH', body: JSON.stringify({ isCurrent: true }) }));
+  return Promise.all(updates);
+}
+
+function syncJob(job: SavedJob): Promise<unknown> {
+  const payload = isUuid(job.id) ? job : { ...job, id: undefined };
+  return request('/data/jobs', { method: 'POST', body: JSON.stringify(payload) });
+}
+
 export type ResumeType = 'original' | 'customized';
 
 export interface TargetJobInfo {
@@ -99,6 +209,7 @@ export function saveResume(
   }
   localStorage.setItem(KEYS.CURRENT_RESUME_ID, item.id);
   localStorage.setItem(KEYS.RESUME, JSON.stringify(resume));
+  if (shouldSync()) background(syncResume(item));
   return item;
 }
 
@@ -120,6 +231,7 @@ export function saveCustomizedResume(
   };
   resumes.push(item);
   localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
+  if (shouldSync()) background(syncResume(item));
   return item;
 }
 
@@ -144,6 +256,7 @@ export function updateCurrentResume(resume: ParsedResume): void {
   localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
   localStorage.setItem(KEYS.CURRENT_RESUME_ID, current.id);
   localStorage.setItem(KEYS.RESUME, JSON.stringify(resume));
+  if (shouldSync()) background(patchResume(current));
 }
 
 export function setCurrentResume(id: string): void {
@@ -154,6 +267,7 @@ export function setCurrentResume(id: string): void {
   if (selected) {
     localStorage.setItem(KEYS.CURRENT_RESUME_ID, id);
     localStorage.setItem(KEYS.RESUME, JSON.stringify(selected.resume));
+    if (shouldSync()) background(patchResume(selected));
   }
 }
 
@@ -173,15 +287,20 @@ export function deleteResume(id: string): void {
     }
   }
   localStorage.setItem(KEYS.RESUMES, JSON.stringify(remaining));
+  if (shouldSync()) background(request(`/data/resumes/${id}`, { method: 'DELETE' }));
 }
 
 export function renameResume(id: string, name: string): void {
   const resumes = loadResumes();
-  const item = resumes.find((r) => r.id === id);
-  if (item && name.trim()) {
-    item.name = name.trim();
-    localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
-  }
+  const updated = resumes.map((item) => {
+    if (item.id === id) {
+      return { ...item, name: name.trim() };
+    }
+    return item;
+  });
+  localStorage.setItem(KEYS.RESUMES, JSON.stringify(updated));
+  const item = updated.find((resume) => resume.id === id);
+  if (item && shouldSync()) background(patchResume(item));
 }
 
 export interface MergedSkill extends AtomicSkill {
@@ -233,6 +352,96 @@ export function mergeExperiencesFromResumes(resumes: ResumeItem[]): MergedExperi
   return [...map.values()];
 }
 
+/**
+ * 编辑合并后的能力：同步更新所有来源原始简历中同名能力。
+ */
+export function updateMergedSkill(
+  originalName: string,
+  updates: { name?: string; level?: string; category?: string; evidence?: string }
+): void {
+  const resumes = loadResumes();
+  resumes
+    .filter((r) => r.type === 'original')
+    .forEach((item) => {
+      item.resume.skills = item.resume.skills.map((skill) => {
+        if (skill.name !== originalName) return skill;
+        const next = { ...skill, ...updates };
+        // 改名后避免与同简历已有能力重名
+        if (updates.name && updates.name !== originalName) {
+          const duplicate = item.resume.skills.find(
+            (s) => s.name === updates.name && s.id !== skill.id
+          );
+          if (duplicate) return skill;
+        }
+        return next;
+      });
+    });
+  localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
+  if (shouldSync()) resumes.filter((item) => item.type === 'original').forEach((item) => background(patchResume(item)));
+}
+
+/**
+ * 删除合并后的能力：从所有来源原始简历中移除同名能力。
+ */
+export function removeMergedSkill(name: string): void {
+  const resumes = loadResumes();
+  resumes
+    .filter((r) => r.type === 'original')
+    .forEach((item) => {
+      item.resume.skills = item.resume.skills.filter((skill) => skill.name !== name);
+    });
+  localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
+  if (shouldSync()) resumes.filter((item) => item.type === 'original').forEach((item) => background(patchResume(item)));
+}
+
+/**
+ * 编辑合并后的经历：按 key 同步更新所有来源原始简历中对应的经历。
+ */
+export function updateMergedExperience(
+  key: string,
+  updates: {
+    company?: string;
+    role?: string;
+    period?: string;
+    description?: string;
+    achievements?: string[];
+    skillsUsed?: string[];
+    rawText?: string;
+  }
+): void {
+  const [company, role, period] = key.split('|||');
+  const resumes = loadResumes();
+  resumes
+    .filter((r) => r.type === 'original')
+    .forEach((item) => {
+      item.resume.experiences = item.resume.experiences.map((exp) => {
+        const expKey = `${exp.company}-${exp.role}-${exp.period}`;
+        const matchKey = `${company}-${role}-${period}`;
+        if (expKey !== matchKey) return exp;
+        return { ...exp, ...updates };
+      });
+    });
+  localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
+  if (shouldSync()) resumes.filter((item) => item.type === 'original').forEach((item) => background(patchResume(item)));
+}
+
+/**
+ * 删除合并后的经历：从所有来源原始简历中移除对应经历。
+ */
+export function removeMergedExperience(key: string): void {
+  const [company, role, period] = key.split('|||');
+  const resumes = loadResumes();
+  resumes
+    .filter((r) => r.type === 'original')
+    .forEach((item) => {
+      item.resume.experiences = item.resume.experiences.filter((exp) => {
+        return !(exp.company === company && exp.role === role && exp.period === period);
+      });
+    });
+  localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
+  if (shouldSync()) resumes.filter((item) => item.type === 'original').forEach((item) => background(patchResume(item)));
+}
+
 export function getApiKey(): string | null {
   return localStorage.getItem(KEYS.API_KEY);
 }
@@ -259,6 +468,7 @@ export interface SavedJob {
   updatedAt?: string;
   sourceResumeIds?: string[];
   resumeSnapshot?: ParsedResume;
+  supplementedGaps?: string[];
 }
 
 export function getNextSequenceNumber(): number {
@@ -289,15 +499,21 @@ export function saveJob(job: SavedJob): void {
   if (index >= 0) jobs[index] = job;
   else jobs.push(job);
   localStorage.setItem(KEYS.SAVED_JOBS, JSON.stringify(jobs));
+  if (shouldSync()) background(syncJob(job));
 }
 
 export function updateJob(id: string, updates: Partial<SavedJob>): void {
   const job = loadSavedJobs().find((item) => item.id === id);
-  if (job) saveJob({ ...job, ...updates, updatedAt: new Date().toISOString() });
+  if (job) {
+    const updated = { ...job, ...updates, updatedAt: new Date().toISOString() };
+    saveJob(updated);
+    if (shouldSync()) background(syncJob(updated));
+  }
 }
 
 export function removeJob(id: string): void {
   localStorage.setItem(KEYS.SAVED_JOBS, JSON.stringify(loadSavedJobs().filter((job) => job.id !== id)));
+  if (shouldSync()) background(request(`/data/jobs/${id}`, { method: 'DELETE' }));
 }
 
 export function saveGeneratedResume(resume: GeneratedResume): void {
@@ -326,7 +542,9 @@ export interface WorkflowDraft {
 }
 
 export function saveWorkflowDraft(data: WorkflowDraft['data']): void {
-  localStorage.setItem(KEYS.WORKFLOW_DRAFT, JSON.stringify({ id: generateId(), updatedAt: new Date().toISOString(), data }));
+  const draft = { id: generateId(), updatedAt: new Date().toISOString(), data };
+  localStorage.setItem(KEYS.WORKFLOW_DRAFT, JSON.stringify(draft));
+  if (shouldSync()) background(request('/data/draft', { method: 'PUT', body: JSON.stringify({ data }) }));
 }
 
 export function loadWorkflowDraft(): WorkflowDraft | null {
@@ -342,6 +560,7 @@ export function loadWorkflowDraft(): WorkflowDraft | null {
 
 export function clearWorkflowDraft(): void {
   localStorage.removeItem(KEYS.WORKFLOW_DRAFT);
+  if (shouldSync()) background(request('/data/draft', { method: 'DELETE' }));
 }
 
 export function hasValidDraft(): boolean {

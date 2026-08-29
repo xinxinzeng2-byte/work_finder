@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "npm install",
+  "installCommand": "npm install && cd client && npm install",
   "buildCommand": "npm run build",
   "outputDirectory": "client/dist",
   "functions": {
@@ -40,6 +40,14 @@
     {
       "source": "/api/ai/generate-resume",
       "destination": "/api/generate"
+    },
+    {
+      "source": "/api/auth/:action",
+      "destination": "/api/auth/[action]"
+    },
+    {
+      "source": "/api/data/:path*",
+      "destination": "/api/data/[...path]"
     },
     {
       "source": "/(.*)",

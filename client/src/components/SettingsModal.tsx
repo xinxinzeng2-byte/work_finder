@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { getApiKey, saveApiKey, exportData, clearAllData } from '../utils/storage';
+import { useEffect } from 'react';
 import { testApiKey } from '../services/api';
 
 interface Props {
@@ -9,6 +10,10 @@ interface Props {
 
 export const SettingsModal: React.FC<Props> = ({ open, onClose }) => {
   const [apiKey, setApiKey] = useState(getApiKey() || '');
+
+  useEffect(() => {
+    if (open) setApiKey(getApiKey() || '');
+  }, [open]);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<'none' | 'success' | 'fail'>('none');
   const [saved, setSaved] = useState(false);
@@ -104,7 +109,7 @@ export const SettingsModal: React.FC<Props> = ({ open, onClose }) => {
 
         <div className="border-t border-line pt-6 mt-6">
           <p className="text-xs text-ink-weak leading-relaxed">
-            所有数据仅保存在你的浏览器本地，不上传任何服务器。
+            简历、岗位和流程草稿会同步到 Neon 云端；DeepSeek API Key 仍仅保存在当前浏览器。
           </p>
         </div>
       </div>

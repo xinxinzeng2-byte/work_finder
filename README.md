@@ -29,6 +29,12 @@ npm run dev
 前端运行在 http://localhost:5173
 后端运行在 http://localhost:3000
 
+### 本地与 Preview 数据模式
+
+- 执行 `npm run dev` 时使用本地模式：不强制登录，简历、岗位和流程草稿保存在浏览器 `localStorage`，因此不依赖 Neon 数据库。
+- Vercel Preview/生产构建使用云端模式：启用邮箱登录，并将数据同步到 Neon 数据库。
+- 如需手动覆盖模式，可设置 `VITE_DATA_MODE=local` 或 `VITE_DATA_MODE=cloud`。
+
 ## 使用流程
 
 1. 在设置页填入 DeepSeek API Key

@@ -13,10 +13,14 @@ export interface AtomicExperience {
   company: string;
   role: string;
   period: string;
+  description?: string;
   achievements: string[];
   skillsUsed: string[];
   rawText: string;
 }
+
+export type MergedSkill = AtomicSkill & { sources: string[] };
+export type MergedExperience = AtomicExperience & { sources: string[] };
 
 export interface ParsedResume {
   skills: AtomicSkill[];
