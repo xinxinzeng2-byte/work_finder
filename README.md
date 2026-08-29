@@ -22,18 +22,23 @@
 # 安装所有依赖
 npm run install:all
 
-# 启动开发环境（前后端同时启动）
+# 启动开发环境（前后端同时启动，本地数据库模式）
 npm run dev
 ```
 
 前端运行在 http://localhost:5173
 后端运行在 http://localhost:3000
 
+可用 `curl http://localhost:3000/health/db` 检查数据库连通性，正常时会返回 `status: ok`。
+
+首次使用本地数据库模式时，在页面注册或登录账号即可。数据会通过本地 Express 后端和 Neon HTTP 驱动（HTTPS 443）写入 `server/.env` 中配置的 `DATABASE_URL`，本地 Vite 代理会自动把 `/api` 请求转发到 `http://localhost:3000`。
+
 ### 本地与 Preview 数据模式
 
-- 执行 `npm run dev` 时使用本地模式：不强制登录，简历、岗位和流程草稿保存在浏览器 `localStorage`，因此不依赖 Neon 数据库。
+- 执行 `npm run dev` 或 `npm run dev:db` 时使用数据库模式：需要登录，简历、岗位和流程草稿会同步到 Neon 数据库；DeepSeek API Key 仅保存在当前浏览器，可在页面「设置」中随时修改。
+- 如果只想临时离线查看或使用浏览器本地数据，可执行 `npm run dev:local`；该模式不强制登录，数据保存在浏览器 `localStorage`。
 - Vercel Preview/生产构建使用云端模式：启用邮箱登录，并将数据同步到 Neon 数据库。
-- 如需手动覆盖模式，可设置 `VITE_DATA_MODE=local` 或 `VITE_DATA_MODE=cloud`。
+- 如需手动覆盖模式，可在启动前设置 `VITE_DATA_MODE=local` 或 `VITE_DATA_MODE=cloud`。
 - Preview/生产环境的 DeepSeek API Key 按用户使用 AES-256-GCM 加密后保存到数据库；数据库只保存密文。
 
 ## 使用流程

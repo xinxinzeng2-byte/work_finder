@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ParsedJobDescription, ParsedResume, MatchResult, GeneratedResume, AtomicExperience } from '../../types';
 import { formatFollowUpExperience, generateFollowUpQuestion, generateTailoredResume, analyzeMatch, parseJobDescription, parseResumeFile, parseResumeText, readFileAsDataUrl } from '../../services/api';
 import { Loading } from '../Loading';
@@ -15,14 +15,16 @@ const STEP_ORDER: WorkflowStep[] = ['import-resume', 'extract-skills', 'input-jo
 type SourceMode = 'library' | 'resumes' | 'import';
 
 export const JobsWorkflowView: React.FC<Props> = ({ onJobsChange, onExit, onNeedApiKey }) => {
-  const draft = loadWorkflowDraft();
+  // 草稿只在工作流实例初始化时读取一次；每次 render 读取都会生成新对象，
+  // 进而触发下面的状态同步 effect，导致第 2 步持续重渲染。
+  const [draft] = useState(() => loadWorkflowDraft());
   const [currentStep, setCurrentStep] = useState<WorkflowStep>(draft?.data.step || 'import-resume');
   const [completedSteps, setCompletedSteps] = useState<WorkflowStep[]>(draft ? STEP_ORDER.slice(0, Math.max(0, STEP_ORDER.indexOf(draft.data.step))) : []);
   const [resumes, setResumes] = useState<ResumeItem[]>(loadResumes());
   const [sourceMode, setSourceMode] = useState<SourceMode>(draft?.data.sourceMode || 'resumes');
   const [selectedResumeIds, setSelectedResumeIds] = useState<string[]>(draft?.data.resumeIds || loadResumes().filter((item) => item.type === 'original').map((item) => item.id));
-  const [mergedSkills, setMergedSkills] = useState<ReturnType<typeof mergeSkillsFromResumes>>([]);
-  const [mergedExperiences, setMergedExperiences] = useState<ReturnType<typeof mergeExperiencesFromResumes>>([]);
+  const [mergedSkills, setMergedSkills] = useState<ReturnType<typeof mergeSkillsFromResumes>>(draft?.data.extractedSkills || []);
+  const [mergedExperiences, setMergedExperiences] = useState<ReturnType<typeof mergeExperiencesFromResumes>>(draft?.data.extractedExperiences || []);
   const [analysisResume, setAnalysisResume] = useState<ParsedResume | null>(null);
   const [jdInput, setJdInput] = useState(draft?.data.jobInput || '');
   const [parsedJd, setParsedJd] = useState<ParsedJobDescription | null>(draft?.data.parsedJd || null);
@@ -40,16 +42,13 @@ export const JobsWorkflowView: React.FC<Props> = ({ onJobsChange, onExit, onNeed
   const [insertMode, setInsertMode] = useState<'new' | 'existing'>('new');
   const [targetExperienceId, setTargetExperienceId] = useState<string>('');
   const [previewExperience, setPreviewExperience] = useState<AtomicExperience | null>(null);
+  const extractionAttemptRef = useRef<string | null>(null);
 
   const originalResumes = useMemo(() => resumes.filter((item) => item.type === 'original'), [resumes]);
   const selectedResumes = useMemo(() => originalResumes.filter((item) => selectedResumeIds.includes(item.id)), [originalResumes, selectedResumeIds]);
   const sourceResumes = sourceMode === 'library' ? originalResumes : selectedResumes;
+  const extractionKey = `${sourceMode}:${sourceResumes.map((item) => item.id).join('|')}`;
   const librarySkills = useMemo(() => mergeSkillsFromResumes(originalResumes), [originalResumes]);
-
-  useEffect(() => {
-    if (draft?.data.extractedSkills) setMergedSkills(draft.data.extractedSkills);
-    if (draft?.data.extractedExperiences) setMergedExperiences(draft.data.extractedExperiences);
-  }, [draft]);
 
   useEffect(() => {
     if (currentStep === 'ai-match' || currentStep === 'supplement' || currentStep === 'generate') return;
@@ -120,12 +119,14 @@ export const JobsWorkflowView: React.FC<Props> = ({ onJobsChange, onExit, onNeed
   };
 
   // 兼容用户直接打开了保存到第 2 步的旧草稿：不要让空结果停留在页面上。
+  // 同一组来源只自动尝试一次，失败后停留在错误提示，避免 loading 结束后无限重试。
   useEffect(() => {
-    if (currentStep !== 'extract-skills' || loading || mergedSkills.length > 0 || mergedExperiences.length > 0) return;
-    if (sourceResumes.length > 0) void handleConfirmResumes();
-    // 仅在数据为空时触发；成功后 mergedSkills / mergedExperiences 变化会自动停止重试。
+    if (currentStep !== 'extract-skills' || loading || error || mergedSkills.length > 0 || mergedExperiences.length > 0 || sourceResumes.length === 0) return;
+    if (extractionAttemptRef.current === extractionKey) return;
+    extractionAttemptRef.current = extractionKey;
+    void handleConfirmResumes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentStep, loading, mergedSkills.length, mergedExperiences.length, sourceResumes.length]);
+  }, [currentStep, loading, error, mergedSkills.length, mergedExperiences.length, extractionKey]);
 
   const buildMergedResume = (): ParsedResume => {
     const first = sourceResumes[0]?.resume;

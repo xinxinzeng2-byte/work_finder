@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import type { ParsedResume, MergedSkill, MergedExperience } from '../../types';
 import { parseResumeFile, parseResumeText, readFileAsDataUrl } from '../../services/api';
-import { deleteResume, loadResumes, mergeExperiencesFromResumes, mergeSkillsFromResumes, renameResume, saveResume, setCurrentResume, updateMergedSkill, removeMergedSkill, updateMergedExperience, removeMergedExperience, type ResumeItem } from '../../utils/storage';
+import { deleteResume, hasApiKey, loadResumes, mergeExperiencesFromResumes, mergeSkillsFromResumes, renameResume, saveResume, setCurrentResume, updateMergedSkill, removeMergedSkill, updateMergedExperience, removeMergedExperience, type ResumeItem } from '../../utils/storage';
 import ResumeImportModal from '../ResumeImportModal';
 import ResumePreviewModal from '../ResumePreviewModal';
 import { downloadResume } from '../../utils/resumeExport';
@@ -40,7 +40,7 @@ export const ResumeManagerView: React.FC<Props> = ({ onResumeUpdate, onNeedApiKe
 
   const importFiles = async (files: File[]) => {
     if (files.length === 0) return;
-    if (!localStorage.getItem('deepseek_api_key')) { setShowImport(false); onNeedApiKey(); return; }
+    if (!hasApiKey()) { setShowImport(false); onNeedApiKey(); return; }
     setLoading(true); setError('');
     try {
       for (const file of files) {
@@ -59,7 +59,7 @@ export const ResumeManagerView: React.FC<Props> = ({ onResumeUpdate, onNeedApiKe
 
   const importText = async (text: string) => {
     if (!text.trim()) return;
-    if (!localStorage.getItem('deepseek_api_key')) { setShowImport(false); onNeedApiKey(); return; }
+    if (!hasApiKey()) { setShowImport(false); onNeedApiKey(); return; }
     setLoading(true); setError('');
     try {
       const parsed = await parseResumeText(text.trim());

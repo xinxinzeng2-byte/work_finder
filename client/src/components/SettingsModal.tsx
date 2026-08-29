@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { getApiKey, hasApiKey, isCloudMode, saveApiKey, saveApiKeyToCloud, exportData, clearAllData } from '../utils/storage';
+import { getApiKey, hasApiKey, isCloudApiKeyMode, saveApiKey, saveApiKeyToCloud, exportData, clearAllData } from '../utils/storage';
 import { useEffect } from 'react';
 import { testApiKey } from '../services/api';
 
@@ -31,7 +31,7 @@ export const SettingsModal: React.FC<Props> = ({ open, onClose }) => {
     if (!value) return;
     // 云端保存失败时保留本地临时副本，保存成功后会删除浏览器明文。
     saveApiKey(value);
-    if (isCloudMode && localStorage.getItem('auth_token')) await saveApiKeyToCloud(value);
+    if (isCloudApiKeyMode && localStorage.getItem('auth_token')) await saveApiKeyToCloud(value);
   };
 
   const handleSave = async () => {
@@ -91,7 +91,7 @@ export const SettingsModal: React.FC<Props> = ({ open, onClose }) => {
           <p className="text-xs text-ink-weak mt-2 leading-relaxed">
             在 platform.deepseek.com 注册并创建 API Key，充几块钱即可使用。
           </p>
-          {isCloudMode && hasApiKey() && !apiKey && <p className="mt-2 text-xs text-moss">当前账号已配置 API Key；如需更换，请直接输入新的 Key 并保存。</p>}
+          {isCloudApiKeyMode && hasApiKey() && !apiKey && <p className="mt-2 text-xs text-moss">当前账号已配置 API Key；如需更换，请直接输入新的 Key 并保存。</p>}
 
           <div className="flex gap-3 mt-4">
             <button onClick={handleTest} disabled={testing || !apiKey.trim()} className="btn-ghost text-sm">
@@ -133,7 +133,7 @@ export const SettingsModal: React.FC<Props> = ({ open, onClose }) => {
 
         <div className="border-t border-line pt-6 mt-6">
           <p className="text-xs text-ink-weak leading-relaxed">
-            {isCloudMode ? 'DeepSeek API Key 会加密保存到当前账号的云端，数据库和浏览器都不保存明文。' : '当前为本地开发模式，DeepSeek API Key 保存在当前浏览器。'}
+            {isCloudApiKeyMode ? 'DeepSeek API Key 会加密保存到当前账号的云端，数据库和浏览器都不保存明文。' : '当前为本地预览模式，DeepSeek API Key 仅保存在当前浏览器，可随时在这里修改。'}
           </p>
         </div>
       </div>

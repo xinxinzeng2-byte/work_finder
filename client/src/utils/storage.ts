@@ -16,6 +16,7 @@ const KEYS = {
   SAVED_JOBS: 'wf_saved_jobs',
   GENERATED: 'wf_generated',
   WORKFLOW_DRAFT: 'wf_workflow_draft',
+  WORKFLOW_DRAFT_PENDING: 'wf_workflow_draft_pending',
   CLOUD_USER_ID: 'wf_cloud_user_id',
   LEGACY_LOCAL_BACKUP: 'wf_legacy_local_backup',
 } as const;
@@ -25,6 +26,10 @@ const API_BASE = '/api';
 // 如需覆盖，可设置 VITE_DATA_MODE=local 或 VITE_DATA_MODE=cloud。
 const DATA_MODE = import.meta.env.VITE_DATA_MODE || (import.meta.env.DEV ? 'local' : 'cloud');
 export const isCloudMode = DATA_MODE === 'cloud';
+// 本地数据库预览可以使用云端数据，同时把 DeepSeek Key 仅保存在当前浏览器。
+// 生产环境未显式覆盖时仍使用云端加密保存。
+const API_KEY_MODE = import.meta.env.VITE_API_KEY_MODE || (isCloudMode ? 'cloud' : 'local');
+export const isCloudApiKeyMode = API_KEY_MODE === 'cloud';
 
 function shouldSync(): boolean {
   return isCloudMode && !!localStorage.getItem('auth_token');
@@ -196,8 +201,11 @@ function enqueueCloudWrite(key: string, operation: () => Promise<unknown>): Prom
     () => { if (cloudWriteChains.get(key) === settled) cloudWriteChains.delete(key); },
   );
   background(next);
-  // 调用方可以等待本次队列已结束；失败由 background 统一记录，不向未等待的普通保存调用抛出未处理拒绝。
-  return next.then(() => undefined, () => undefined);
+  // 既允许需要确认结果的调用方捕获失败，也避免普通后台写入因无人等待而产生
+  // unhandled rejection。给 result 附加的兜底处理不会改变调用方 await 时的结果。
+  const result = next.then(() => undefined);
+  void result.catch(() => undefined);
+  return result;
 }
 
 /** 退出登录前等待当前账号所有已发起的云端写入完成。 */
@@ -216,6 +224,7 @@ export async function hydrateFromCloud(userId?: string): Promise<void> {
   const localResumes = loadResumes();
   const localJobs = loadSavedJobs();
   const localDraft = loadWorkflowDraft();
+  const localDraftPending = localStorage.getItem(KEYS.WORKFLOW_DRAFT_PENDING);
   if (!localOwnerId && (localResumes.length > 0 || localJobs.length > 0 || localDraft)) {
     localStorage.setItem(KEYS.LEGACY_LOCAL_BACKUP, JSON.stringify({ resumes: localResumes, jobs: localJobs, draft: localDraft }));
   }
@@ -268,15 +277,20 @@ export async function hydrateFromCloud(userId?: string): Promise<void> {
   localStorage.setItem(KEYS.SAVED_JOBS, JSON.stringify(jobs));
   if (draftData.draft) {
     localStorage.setItem(KEYS.WORKFLOW_DRAFT, JSON.stringify(draftData.draft));
-  } else if (canMigrateLocalData && localDraft) {
+    localStorage.removeItem(KEYS.WORKFLOW_DRAFT_PENDING);
+  } else if (canMigrateLocalData && localDraft && localDraftPending) {
+    // 只有明确标记为“尚未同步成功”的本地草稿才允许补传，避免用户已经
+    // 放弃的旧缓存因重新登录而复活。
     localStorage.setItem(KEYS.WORKFLOW_DRAFT, JSON.stringify(localDraft));
     try {
-      await request('/data/draft', { method: 'PUT', body: JSON.stringify({ data: localDraft.data }) });
+      await request('/data/draft', { method: 'PUT', body: JSON.stringify({ data: localDraft.data, updatedAt: localDraft.updatedAt }) });
+      localStorage.removeItem(KEYS.WORKFLOW_DRAFT_PENDING);
     } catch (error) {
       console.warn('迁移流程草稿失败', error);
     }
   } else {
     localStorage.removeItem(KEYS.WORKFLOW_DRAFT);
+    localStorage.removeItem(KEYS.WORKFLOW_DRAFT_PENDING);
   }
   const current = resumes.find((item) => item.type === 'original' && item.isCurrent);
   if (current) {
@@ -689,6 +703,9 @@ export function getApiKey(): string | null {
 
 /** 云端已配置时不在浏览器保存明文，只保存一个是否已配置的标记。 */
 export function hasApiKey(): boolean {
+  // 本地预览必须确认当前浏览器里确实保存了 Key；云端的“已配置”标记
+  // 不能用于本地请求，因为本地模式无法读取云端加密后的明文 Key。
+  if (!isCloudApiKeyMode) return !!getApiKey();
   return !!getApiKey() || localStorage.getItem(KEYS.API_KEY_CONFIGURED) === 'true';
 }
 
@@ -705,7 +722,7 @@ export function saveApiKey(key: string): void {
 
 /** 登录后只读取云端是否已配置，不把 API Key 明文下发到浏览器。 */
 export async function hydrateApiKey(): Promise<boolean> {
-  if (!isCloudMode || !localStorage.getItem('auth_token')) return hasApiKey();
+  if (!isCloudApiKeyMode || !localStorage.getItem('auth_token')) return hasApiKey();
   try {
     const result = await request<{ configured: boolean }>('/auth/api-key');
     if (result.configured) {
@@ -724,7 +741,7 @@ export async function hydrateApiKey(): Promise<boolean> {
 
 /** 将当前输入的 API Key 加密保存到当前登录用户的数据库。 */
 export async function saveApiKeyToCloud(key: string): Promise<void> {
-  if (!isCloudMode || !localStorage.getItem('auth_token')) return;
+  if (!isCloudApiKeyMode || !localStorage.getItem('auth_token')) return;
   await request('/auth/api-key', { method: 'PUT', body: JSON.stringify({ apiKey: key.trim() }) });
   localStorage.setItem(KEYS.API_KEY_CONFIGURED, 'true');
   // 云端保存成功后移除浏览器明文，仅保留配置状态。
@@ -893,7 +910,20 @@ function normalizeWorkflowDraft(value: unknown): WorkflowDraft | null {
 export function saveWorkflowDraft(data: WorkflowDraft['data']): void {
   const draft = { id: generateId(), updatedAt: new Date().toISOString(), data };
   localStorage.setItem(KEYS.WORKFLOW_DRAFT, JSON.stringify(draft));
-  if (shouldSync()) enqueueCloudWrite('draft', () => request('/data/draft', { method: 'PUT', body: JSON.stringify({ data }) }));
+  if (shouldSync()) {
+    localStorage.setItem(KEYS.WORKFLOW_DRAFT_PENDING, draft.updatedAt);
+    const sync = enqueueCloudWrite('draft', () => request('/data/draft', { method: 'PUT', body: JSON.stringify({ data, updatedAt: draft.updatedAt }) }));
+    void sync.then(
+      () => {
+        if (localStorage.getItem(KEYS.WORKFLOW_DRAFT_PENDING) === draft.updatedAt) {
+          localStorage.removeItem(KEYS.WORKFLOW_DRAFT_PENDING);
+        }
+      },
+      () => undefined,
+    );
+  } else {
+    localStorage.removeItem(KEYS.WORKFLOW_DRAFT_PENDING);
+  }
 }
 
 export function loadWorkflowDraft(): WorkflowDraft | null {
@@ -902,20 +932,25 @@ export function loadWorkflowDraft(): WorkflowDraft | null {
   try {
     return normalizeWorkflowDraft(JSON.parse(data));
   } catch {
-    clearWorkflowDraft();
+    void clearWorkflowDraft().catch((error) => console.warn('清理无效流程草稿失败', error));
     return null;
   }
 }
 
 export async function clearWorkflowDraft(): Promise<void> {
+  const previousDraft = localStorage.getItem(KEYS.WORKFLOW_DRAFT);
+  const previousPending = localStorage.getItem(KEYS.WORKFLOW_DRAFT_PENDING);
   localStorage.removeItem(KEYS.WORKFLOW_DRAFT);
+  localStorage.removeItem(KEYS.WORKFLOW_DRAFT_PENDING);
   if (shouldSync()) {
     try {
       // 等待同一条草稿写入队列，避免刷新时 GET 先于 DELETE 读到旧草稿。
       await enqueueCloudWrite('draft', () => request('/data/draft', { method: 'DELETE' }));
     } catch (error) {
-      // 本地状态已经清理；云端同步失败由后台任务记录，下一次进入时仍可重试。
-      console.warn('清理云端流程草稿失败', error);
+      // 云端删除没有成功时恢复本地草稿，让界面保持真实状态并允许用户重试。
+      if (previousDraft) localStorage.setItem(KEYS.WORKFLOW_DRAFT, previousDraft);
+      if (previousPending) localStorage.setItem(KEYS.WORKFLOW_DRAFT_PENDING, previousPending);
+      throw error;
     }
   }
 }

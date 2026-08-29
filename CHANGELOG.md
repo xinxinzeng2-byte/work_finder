@@ -1,5 +1,34 @@
 # 更新日志
 
+## 完善本地数据库开发模式与岗位工作流草稿同步可靠性修复（2026-08-29）
+
+- 本地数据库开发模式成为默认，新增离线本地预览模式；同时补充数据库健康检查，并使用 Neon HTTPS 驱动避免本地网络无法访问 PostgreSQL 5432 端口。
+- 修复岗位工作流草稿删除后被旧写入自动恢复的问题：增加草稿客户端时间戳、删除墓碑和迁移脚本，并让放弃操作等待云端删除，失败时恢复本地状态供重试。
+- 区分本地和云端 API Key 存储，统一简历导入的 Key 检查；同时修复工作流初始化持续重渲染和历史草稿空结果无限重试。
+- 补充本地数据库开发说明、Neon 依赖、类型声明和服务端 `/health/db` 连通性接口。
+
+### 涉及文件
+
+- `CHANGELOG.md`
+- `README.md`
+- `api/data/[...path].ts`
+- `client/package.json`
+- `client/src/components/SettingsModal.tsx`
+- `client/src/components/views/JobApplicationsView.tsx`
+- `client/src/components/views/JobsWorkflowView.tsx`
+- `client/src/components/views/ResumeManagerView.tsx`
+- `client/src/services/api.ts`
+- `client/src/utils/storage.ts`
+- `client/src/vite-env.d.ts`
+- `db/migrations/20260829_workflow_draft_tombstones.sql`
+- `db/schema.sql`
+- `package.json`
+- `server/package-lock.json`
+- `server/package.json`
+- `server/src/index.ts`
+- `server/src/routes/dataRoutes.ts`
+- `server/src/services/database.ts`
+
 ## 简历AI提取修复、API key云端存储、草稿刷新前后一致性修复（2026-08-29）
 
 - 修复岗位详情页生成定制简历后未清理工作流草稿的问题，等待云端草稿删除完成，避免刷新后重新出现旧提醒。

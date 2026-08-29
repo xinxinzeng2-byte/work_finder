@@ -12,16 +12,26 @@ interface Props {
 
 export const JobApplicationsView: React.FC<Props> = ({ jobs, onNewJob, onContinueDraft, onSelectJob, onJobsChange }) => {
   const [hasDraft, setHasDraft] = useState(hasValidDraft());
+  const [abandoningDraft, setAbandoningDraft] = useState(false);
+  const [abandonError, setAbandonError] = useState('');
   const formatDate = (value: string) => new Date(value).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   const handleDelete = (job: SavedJob) => {
     if (window.confirm(`确定删除「${job.jobName || job.jd.position || '未命名岗位'}」吗？`)) { removeJob(job.id); onJobsChange(); }
   };
 
-  const handleAbandonDraft = () => {
+  const handleAbandonDraft = async () => {
     if (!window.confirm('确定放弃这次未完成的岗位分析吗？已保存的简历和能力库不会受影响。')) return;
-    clearWorkflowDraft();
-    setHasDraft(false);
+    setAbandoningDraft(true);
+    setAbandonError('');
+    try {
+      await clearWorkflowDraft();
+      setHasDraft(false);
+    } catch (error) {
+      setAbandonError(error instanceof Error ? error.message : '放弃分析失败，请重试');
+    } finally {
+      setAbandoningDraft(false);
+    }
   };
 
   return <div className="page-shell animate-fade-in">
@@ -36,7 +46,7 @@ export const JobApplicationsView: React.FC<Props> = ({ jobs, onNewJob, onContinu
 
     {!hasApiKey() && <div className="mb-5 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"><span>AI 功能还未启用，请先配置 API Key。</span><span className="text-xs">点击左侧「设置」</span></div>}
 
-    {hasDraft && <div className="mb-5 flex items-center justify-between rounded-xl border border-terra-border bg-terra-light px-5 py-4"><div><p className="text-sm font-medium text-terra">有一个未完成的岗位分析</p><p className="mt-1 text-xs text-ink-secondary">草稿会保留你的简历来源和岗位输入，可以继续完成。</p></div><div className="flex items-center gap-3"><button onClick={handleAbandonDraft} className="h-9 px-2 text-xs text-ink-weak transition-colors hover:text-terra">放弃分析</button><button onClick={onContinueDraft} className="btn-ghost h-9 border-terra-border px-4 text-xs text-terra">继续分析</button></div></div>}
+    {hasDraft && <div className="mb-5 rounded-xl border border-terra-border bg-terra-light px-5 py-4"><div className="flex items-center justify-between"><div><p className="text-sm font-medium text-terra">有一个未完成的岗位分析</p><p className="mt-1 text-xs text-ink-secondary">草稿会保留你的简历来源和岗位输入，可以继续完成。</p></div><div className="flex items-center gap-3"><button onClick={() => void handleAbandonDraft()} disabled={abandoningDraft} className="h-9 px-2 text-xs text-ink-weak transition-colors hover:text-terra disabled:cursor-not-allowed disabled:opacity-50">{abandoningDraft ? '正在放弃...' : '放弃分析'}</button><button onClick={onContinueDraft} disabled={abandoningDraft} className="btn-ghost h-9 border-terra-border px-4 text-xs text-terra">继续分析</button></div></div>{abandonError && <p className="mt-3 text-xs text-terra">删除云端草稿失败：{abandonError}</p>}</div>}
 
     <section className="overflow-hidden rounded-xl border border-line bg-paper">
       <div className="flex items-center justify-between border-b border-line px-5 py-4"><div><h2 className="font-serif text-lg font-semibold">岗位记录</h2><p className="mt-1 text-xs text-ink-weak">共 {jobs.length} 条，完成 AI 匹配分析后自动保存</p></div><span className="text-xs text-ink-weak">按分析时间倒序</span></div>

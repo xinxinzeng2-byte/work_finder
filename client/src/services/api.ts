@@ -5,7 +5,7 @@ import type {
   GeneratedResume,
   AtomicExperience,
 } from '../types';
-import { getApiKey, isCloudMode } from '../utils/storage';
+import { getApiKey, isCloudApiKeyMode } from '../utils/storage';
 
 // 本地由 Vite 代理到 Express，部署时由 vercel.json 映射到 Serverless Function。
 const BASE_URL = '/api/ai';
@@ -17,7 +17,7 @@ function buildHeaders(json: boolean = true): Record<string, string> {
   const headers: Record<string, string> = {};
   const token = localStorage.getItem('auth_token');
   // 云端模式由后端按登录用户从数据库读取并解密，避免把 API Key 明文放进请求头。
-  const key = isCloudMode ? null : getApiKey();
+  const key = isCloudApiKeyMode ? null : getApiKey();
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }

@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { getSql } from './services/database';
 import aiRoutes from './routes/aiRoutes';
 import authRoutes from './routes/authRoutes';
 import dataRoutes from './routes/dataRoutes';
@@ -10,6 +11,13 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
+
+function withTimeout<T>(operation: Promise<T>, milliseconds: number): Promise<T> {
+  return Promise.race([
+    operation,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('DATABASE_TIMEOUT')), milliseconds)),
+  ]);
+}
 
 // 中间件
 app.use(
@@ -24,6 +32,17 @@ app.use(express.urlencoded({ extended: true }));
 // 健康检查
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'worker-finder-server' });
+});
+
+// 只读数据库连通性检查，方便本地启动后快速确认 DATABASE_URL 是否生效。
+app.get('/health/db', async (_req, res) => {
+  try {
+    await withTimeout(getSql()`SELECT 1`, 6_000);
+    res.json({ status: 'ok', service: 'worker-finder-database' });
+  } catch (error) {
+    console.error('[Health database]', error instanceof Error ? error.message : error);
+    res.status(503).json({ status: 'error', service: 'worker-finder-database', error: '数据库暂时无法连接' });
+  }
 });
 
 // API 路由

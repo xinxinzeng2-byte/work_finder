@@ -308,14 +308,26 @@ router.put('/draft', async (req, res) => {
     res.status(400).json({ error: '草稿数据不能为空' });
     return;
   }
+  const clientUpdatedAt = typeof body.updatedAt === 'string' && !Number.isNaN(Date.parse(body.updatedAt)) ? body.updatedAt : null;
+  if (!clientUpdatedAt) {
+    res.status(400).json({ error: '草稿更新时间无效，请刷新页面后重试' });
+    return;
+  }
   try {
     const sql = getSql();
     const [row] = await sql`
-      INSERT INTO workflow_drafts (user_id, data, updated_at)
-      VALUES (${userId}, ${jsonText(body.data)}::jsonb, now())
-      ON CONFLICT (user_id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()
+      INSERT INTO workflow_drafts (user_id, data, client_updated_at, updated_at)
+      VALUES (${userId}, ${jsonText(body.data)}::jsonb, ${clientUpdatedAt}::timestamptz, now())
+      ON CONFLICT (user_id) DO UPDATE SET
+        data = EXCLUDED.data,
+        client_updated_at = EXCLUDED.client_updated_at,
+        updated_at = now()
       RETURNING user_id, data, updated_at
     `;
+    if (!row) {
+      res.status(409).json({ error: '该草稿早于最近一次放弃操作，已忽略旧数据' });
+      return;
+    }
     res.json({ draft: { id: row.user_id, updatedAt: row.updated_at, data: row.data } });
   } catch (error) {
     console.error('[Data draft put]', error);
@@ -328,7 +340,16 @@ router.delete('/draft', async (req, res) => {
   if (!userId) return;
   try {
     const sql = getSql();
-    await sql`DELETE FROM workflow_drafts WHERE user_id = ${userId}`;
+    await sql`
+      WITH marked AS (
+        INSERT INTO workflow_draft_tombstones (user_id, deleted_at)
+        VALUES (${userId}, now())
+        ON CONFLICT (user_id) DO UPDATE SET deleted_at = EXCLUDED.deleted_at
+        RETURNING user_id
+      )
+      DELETE FROM workflow_drafts
+      WHERE user_id = (SELECT user_id FROM marked)
+    `;
     res.status(204).end();
   } catch (error) {
     console.error('[Data draft delete]', error);
