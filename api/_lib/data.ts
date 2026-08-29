@@ -6,6 +6,18 @@ export function jsonValue(value: unknown, fallback: unknown): string {
   return JSON.stringify(value ?? fallback);
 }
 
+function stringArrayValue(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string' && item.length > 0);
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return stringArrayValue(parsed);
+  } catch {
+    // 兼容早期版本保存的逗号分隔字符串。
+  }
+  return value.split(',').map((item) => item.trim()).filter(Boolean);
+}
+
 export function requireId(req: VercelRequest, res: VercelResponse): { userId: string; id: string } | null {
   try {
     const userId = getUserId(req);
@@ -37,7 +49,7 @@ export function mapResume(row: Record<string, unknown>) {
     sourceFileData: row.file_data || undefined,
     sourceMimeType: row.file_mime || undefined,
     isCurrent: row.is_current,
-    sourceIds: row.source_ids || [],
+    sourceIds: stringArrayValue(row.source_ids),
     targetJob: row.target_job || undefined,
     uploadedAt: row.uploaded_at,
   };
@@ -56,8 +68,8 @@ export function mapJob(row: Record<string, unknown>) {
     matchResult: row.match_result,
     resumeSnapshot: row.resume_snapshot || undefined,
     generatedResume: row.generated_resume || undefined,
-    supplementedGaps: row.supplemented_gaps || [],
-    sourceResumeIds: row.source_resume_ids || [],
+    supplementedGaps: stringArrayValue(row.supplemented_gaps),
+    sourceResumeIds: stringArrayValue(row.source_resume_ids),
     savedAt: row.saved_at,
     analyzedAt: row.analyzed_at || undefined,
     createdAt: row.created_at,

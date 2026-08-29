@@ -33,6 +33,19 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+/** 兼容早期版本把来源 ID 保存为字符串或 JSON 字符串的历史数据。 */
+function normalizeStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string' && item.length > 0);
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return normalizeStringArray(parsed);
+  } catch {
+    // 继续按旧版逗号分隔字符串处理。
+  }
+  return value.split(',').map((item) => item.trim()).filter(Boolean);
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('auth_token');
   const headers = new Headers(init.headers);
@@ -114,18 +127,24 @@ export async function hydrateFromCloud(userId?: string): Promise<void> {
     // 但岗位保存请求失败/尚未完成时，本地岗位被空数组覆盖。
     const resumeIdMap = new Map(localResumes.map((item) => [item.id, isUuid(item.id) ? item.id : generateId()]));
     const migratedResumes: ResumeItem[] = localResumes
-      .map((item): ResumeItem => ({
-        ...item,
-        id: resumeIdMap.get(item.id)!,
-        ...(item.sourceIds ? { sourceIds: item.sourceIds.map((id) => resumeIdMap.get(id) || id) } : {}),
-      }))
+      .map((item): ResumeItem => {
+        const sourceIds = normalizeStringArray(item.sourceIds).map((id) => resumeIdMap.get(id) || id);
+        return {
+          ...item,
+          id: resumeIdMap.get(item.id)!,
+          ...(sourceIds.length ? { sourceIds } : {}),
+        };
+      })
       .filter((item) => !resumes.some((remote) => remote.id === item.id));
     const migratedJobs: SavedJob[] = localJobs
-      .map((job): SavedJob => ({
-        ...job,
-        id: isUuid(job.id) ? job.id : generateId(),
-        ...(job.sourceResumeIds ? { sourceResumeIds: job.sourceResumeIds.map((id) => resumeIdMap.get(id) || id) } : {}),
-      }))
+      .map((job): SavedJob => {
+        const sourceResumeIds = normalizeStringArray(job.sourceResumeIds).map((id) => resumeIdMap.get(id) || id);
+        return {
+          ...job,
+          id: isUuid(job.id) ? job.id : generateId(),
+          ...(sourceResumeIds.length ? { sourceResumeIds } : {}),
+        };
+      })
       .filter((job) => !jobs.some((remote) => remote.id === job.id));
 
     // 上传失败时保留本地记录，避免一次网络抖动把界面清空；下次进入还会继续重试。
@@ -220,7 +239,9 @@ export function loadResumes(): ResumeItem[] {
   const data = localStorage.getItem(KEYS.RESUMES);
   if (data) {
     try {
-      return (JSON.parse(data) as ResumeItem[]).sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+      return (JSON.parse(data) as ResumeItem[])
+        .map((item) => ({ ...item, sourceIds: normalizeStringArray(item.sourceIds) }))
+        .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
     } catch {
       localStorage.removeItem(KEYS.RESUMES);
     }
@@ -547,6 +568,8 @@ export function loadSavedJobs(): SavedJob[] {
   try {
     const jobs = JSON.parse(data) as SavedJob[];
     jobs.forEach((job, index) => {
+      job.sourceResumeIds = normalizeStringArray(job.sourceResumeIds);
+      job.supplementedGaps = normalizeStringArray(job.supplementedGaps);
       job.analyzedAt ||= job.savedAt;
       job.createdAt ||= job.analyzedAt;
       job.updatedAt ||= job.analyzedAt;
