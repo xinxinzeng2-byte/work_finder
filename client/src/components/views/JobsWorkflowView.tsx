@@ -10,15 +10,16 @@ interface Props {
   onComplete: (job: SavedJob) => void;
   onExit: () => void;
   onNeedApiKey: () => void;
+  resumeDraft: boolean;
 }
 
 const STEP_ORDER: WorkflowStep[] = ['import-resume', 'extract-skills', 'input-job', 'ai-match'];
 type SourceMode = 'library' | 'resumes' | 'import';
 
-const normalizeDraftStep = (step?: string): WorkflowStep => STEP_ORDER.includes(step as WorkflowStep) ? step as WorkflowStep : 'input-job';
+const normalizeDraftStep = (step?: string): WorkflowStep => STEP_ORDER.includes(step as WorkflowStep) ? step as WorkflowStep : 'import-resume';
 
-export const JobsWorkflowView: React.FC<Props> = ({ onJobsChange, onComplete, onExit, onNeedApiKey }) => {
-  const [draft] = useState(() => loadWorkflowDraft());
+export const JobsWorkflowView: React.FC<Props> = ({ onJobsChange, onComplete, onExit, onNeedApiKey, resumeDraft }) => {
+  const [draft] = useState(() => resumeDraft ? loadWorkflowDraft() : null);
   const initialStep = normalizeDraftStep(draft?.data.step);
   const [currentStep, setCurrentStep] = useState<WorkflowStep>(initialStep);
   const [completedSteps, setCompletedSteps] = useState<WorkflowStep[]>(draft ? STEP_ORDER.slice(0, Math.max(0, STEP_ORDER.indexOf(initialStep))) : []);
