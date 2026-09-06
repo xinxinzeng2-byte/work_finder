@@ -389,6 +389,7 @@ export interface TargetJobInfo {
   position: string;
   company?: string;
   matchScore: number;
+  jobId?: string;
 }
 
 export interface ResumeItem {
@@ -431,6 +432,7 @@ function normalizeResumeItem(value: unknown): ResumeItem {
       position: typeof targetJob.position === 'string' ? targetJob.position : '',
       company: typeof targetJob.company === 'string' ? targetJob.company : undefined,
       matchScore: typeof targetJob.matchScore === 'number' ? targetJob.matchScore : 0,
+      jobId: typeof targetJob.jobId === 'string' ? targetJob.jobId : undefined,
     } : undefined,
   };
 }
@@ -504,8 +506,11 @@ export function saveCustomizedResume(
   options: { name: string; sourceIds: string[]; targetJob: TargetJobInfo },
 ): ResumeItem {
   const resumes = loadResumes();
+  const existingIndex = options.targetJob.jobId
+    ? resumes.findIndex((item) => item.type === 'customized' && item.targetJob?.jobId === options.targetJob.jobId)
+    : -1;
   const item: ResumeItem = {
-    id: generateId(),
+    id: existingIndex >= 0 ? resumes[existingIndex].id : generateId(),
     name: options.name,
     type: 'customized',
     resume,
@@ -515,7 +520,8 @@ export function saveCustomizedResume(
     isCurrent: false,
     targetJob: options.targetJob,
   };
-  resumes.push(item);
+  if (existingIndex >= 0) resumes[existingIndex] = item;
+  else resumes.push(item);
   localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
   if (shouldSync()) enqueueCloudWrite(`resume:${item.id}`, () => syncResume(item));
   return item;
