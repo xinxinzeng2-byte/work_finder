@@ -3,6 +3,7 @@ import type {
   AtomicSkill,
   GeneratedResume,
   MatchResult,
+  MatchDimensionKey,
   ParsedJobDescription,
   ParsedResume,
 } from '../types';
@@ -116,9 +117,13 @@ function normalizeParsedJobDescription(value: unknown): ParsedJobDescription {
   const requirements = Array.isArray(source.requirements) ? source.requirements.map((value) => {
     const requirement = asRecord(value);
     return {
+      id: typeof requirement.id === 'string' ? requirement.id : undefined,
+      title: typeof requirement.title === 'string' ? requirement.title.trim() || undefined : undefined,
       category: typeof requirement.category === 'string' ? requirement.category : '',
       item: typeof requirement.item === 'string' ? requirement.item : '',
       isHard: requirement.isHard === true,
+      dimension: ['skill', 'experience', 'project', 'achievement', 'education', 'industry', 'other'].includes(String(requirement.dimension)) ? requirement.dimension as MatchDimensionKey : undefined,
+      jobEvidence: typeof requirement.jobEvidence === 'string' ? requirement.jobEvidence : undefined,
     };
   }) : [];
   return {
@@ -135,12 +140,59 @@ function normalizeMatchItems(value: unknown): MatchResult['gaps'] {
   return Array.isArray(value) ? value.map((value) => {
     const item = asRecord(value);
     return {
+      id: typeof item.id === 'string' ? item.id : undefined,
+      title: typeof item.title === 'string' ? item.title.trim() || undefined : undefined,
       requirement: typeof item.requirement === 'string' ? item.requirement : '',
       matched: item.matched === true,
+      status: ['matched', 'partial', 'missing'].includes(String(item.status)) ? item.status as MatchResult['hardConditionCheck'][number]['status'] : undefined,
       evidence: typeof item.evidence === 'string' ? item.evidence : undefined,
+      jobEvidence: typeof item.jobEvidence === 'string' ? item.jobEvidence : undefined,
+      dimension: ['skill', 'experience', 'project', 'achievement', 'education', 'industry', 'other'].includes(String(item.dimension)) ? item.dimension as MatchDimensionKey : undefined,
       isHard: item.isHard === true,
     };
   }) : [];
+}
+
+function normalizeCapabilityRadar(value: unknown): MatchResult['capabilityRadar'] {
+  const source = asRecord(value);
+  if (!Array.isArray(source.dimensions)) return undefined;
+  const validKeys = ['skill', 'experience', 'project', 'achievement', 'education', 'industry'];
+  const validStatuses = ['matched', 'partial', 'missing', 'not_required'];
+  const dimensions = source.dimensions.flatMap((value) => {
+    const dimension = asRecord(value);
+    if (!validKeys.includes(String(dimension.key))) return [];
+    const details = Array.isArray(dimension.details) ? dimension.details.flatMap((value) => {
+      const detail = asRecord(value);
+      if (!['matched', 'partial', 'missing'].includes(String(detail.status))) return [];
+      return [{
+        title: typeof detail.title === 'string' ? detail.title.trim() || undefined : undefined,
+        requirement: typeof detail.requirement === 'string' ? detail.requirement : '',
+        status: detail.status as 'matched' | 'partial' | 'missing',
+        evidence: typeof detail.evidence === 'string' ? detail.evidence : undefined,
+        analysisSection: ['hard', 'skill', 'gap'].includes(String(detail.analysisSection)) ? detail.analysisSection as 'hard' | 'skill' | 'gap' : undefined,
+      }];
+    }) : [];
+    return [{
+      key: dimension.key as 'skill' | 'experience' | 'project' | 'achievement' | 'education' | 'industry',
+      label: typeof dimension.label === 'string' ? dimension.label : '',
+      jobScore: typeof dimension.jobScore === 'number' ? dimension.jobScore : 0,
+      resumeScore: typeof dimension.resumeScore === 'number' ? dimension.resumeScore : 0,
+      matchScore: typeof dimension.matchScore === 'number' ? dimension.matchScore : null,
+      weight: typeof dimension.weight === 'number' ? dimension.weight : 0,
+      status: validStatuses.includes(String(dimension.status)) ? dimension.status as 'matched' | 'partial' | 'missing' | 'not_required' : 'not_required',
+      matchedCount: typeof dimension.matchedCount === 'number' ? dimension.matchedCount : 0,
+      partialCount: typeof dimension.partialCount === 'number' ? dimension.partialCount : 0,
+      missingCount: typeof dimension.missingCount === 'number' ? dimension.missingCount : 0,
+      details,
+    }];
+  });
+  if (dimensions.length !== 6) return undefined;
+  return {
+    scoringVersion: typeof source.scoringVersion === 'string' ? source.scoringVersion : 'radar-v1',
+    dimensions,
+    advantages: normalizeStringArray(source.advantages),
+    keyGaps: normalizeStringArray(source.keyGaps),
+  };
 }
 
 function normalizeMatchResult(value: unknown): MatchResult {
@@ -151,6 +203,7 @@ function normalizeMatchResult(value: unknown): MatchResult {
     skillMatch: normalizeMatchItems(source.skillMatch),
     gaps: normalizeMatchItems(source.gaps),
     summary: typeof source.summary === 'string' ? source.summary : '',
+    capabilityRadar: normalizeCapabilityRadar(source.capabilityRadar),
   };
 }
 

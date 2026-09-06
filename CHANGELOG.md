@@ -1,5 +1,45 @@
 # 更新日志
 
+## 新增六维能力雷达并重构岗位分析详情（2026-09-06）
+
+### 产品功能
+
+- **新增六维能力雷达与确定性评分**
+  - 摘要：将 AI 职责限定为提取岗位要求、简历证据和离散等级，由服务端确定性算法统一计算技能、经验、项目、成果、教育专业、行业领域六维分数、权重、匹配状态、优势与差距；没有简历原文时证据等级和相关度强制归零，其他要求不参与六维评分。
+  - 涉及文件：`server/src/services/capabilityScoring.ts`、`server/src/services/deepseekService.ts`、`server/src/types/index.ts`、`client/src/types/index.ts`
+
+- **支持历史岗位重新分析与补录状态持久化**
+  - 摘要：历史分析缺少六维数据时可使用保存的简历快照重新分析并覆盖原岗位结果；经历补录后同步保存补录项、简历快照和岗位状态，边界上没有快照且没有当前简历时明确阻止重新计算。
+  - 涉及文件：`client/src/components/views/AnalyzeView.tsx`、`client/src/utils/storage.ts`
+
+### 界面优化
+
+- **重构岗位分析详情与雷达联动交互**
+  - 摘要：新增双轮廓六维雷达图、综合摘要、优势差距、状态计数和维度筛选，并让具体能力列表可选择是否与雷达维度联动；历史记录缺少真实六维数据时展示空状态，不根据旧总分生成伪造数据。
+  - 涉及文件：`client/src/components/CapabilityRadar.tsx`、`client/src/components/analysis-detail.css`、`client/src/components/views/AnalyzeView.tsx`
+
+### 修复与质量
+
+- **兼容历史分析数据并保留证据关联**
+  - 摘要：为历史岗位分析补充匹配项、雷达维度和明细的安全归一化，复用已保存的维度、状态与证据关联；仅兼容可识别字段，非法维度、状态或不完整雷达数据不会被当作有效六维结果。
+  - 涉及文件：`client/src/utils/storage.ts`、`client/src/types/index.ts`
+
+### 测试与文档
+
+- **补充能力评分测试与可审计计算文档**
+  - 摘要：增加同输入结果一致、六维权重合计、缺失与满分状态、分数边界及无原文证据归零测试，并记录第一版评分公式、状态规则、排序方式和数据边界；文档说明已按当前实现统一。
+  - 涉及文件：`server/src/services/capabilityScoring.test.ts`、`docs/开发文档/架构设计/CAPABILITY_RADAR_SCORING.md`
+
+### 文档与规范
+
+- **整理并更新项目文档目录**
+  - 摘要：将数据库计划、数据库结构、设计规范和部署说明按用途迁移到 `docs` 分类目录；数据库计划与部署说明仅迁移位置，数据库结构同步修正迁移后的计划文档链接，设计规范则从旧“PDF 翻译助手”内容更新为 Worker Finder 的页面结构、组件文案和能力经历区块规范。
+  - 涉及文件：`DATABASE_PLAN.md`（删除）、`DATABASE_SCHEMA.md`（删除）、`DESIGN_SPEC.md`（删除）、`DEPLOY.md`（删除）、`docs/开发文档/开发计划/DATABASE_PLAN.md`、`docs/开发文档/架构设计/DATABASE_SCHEMA.md`、`docs/设计规范/DESIGN_SPEC.md`、`docs/部署说明/DEPLOY.md`
+
+- **新增项目协作与更新日志规则**
+  - 摘要：规定修改前阅读、矛盾集中确认、功能范围保护、依赖审批和验收表述边界，并明确只有推送 GitHub 时更新根目录唯一日志及事项格式；同时忽略本地参考资料与生成目录，不引入新依赖。
+  - 涉及文件：`AGENTS.md`、`.gitignore`、`CHANGELOG.md`
+
 ## 完善本地数据库开发模式与岗位工作流草稿同步可靠性修复（2026-08-29）
 
 - 本地数据库开发模式成为默认，新增离线本地预览模式；同时补充数据库健康检查，并使用 Neon HTTPS 驱动避免本地网络无法访问 PostgreSQL 5432 端口。

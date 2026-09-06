@@ -35,9 +35,13 @@ export interface ParsedResume {
 
 // 岗位要求项
 export interface JobRequirement {
+  id?: string;
+  title?: string;          // 独立的能力短标题，完整要求保存在 item
   category: string;        // 硬性条件 / 能力要求
   item: string;            // 具体要求项
   isHard: boolean;         // 是否硬性条件
+  dimension?: CapabilityDimensionKey | 'other';
+  jobEvidence?: string;
 }
 
 // 解析后的 JD
@@ -51,11 +55,80 @@ export interface ParsedJobDescription {
 }
 
 // 匹配项
+export type CapabilityDetailStatus = 'matched' | 'partial' | 'missing';
+
 export interface MatchItem {
+  id?: string;
+  title?: string;
   requirement: string;
   matched: boolean;
+  status?: CapabilityDetailStatus;
   evidence?: string;       // 匹配的证据（来自简历的哪段经历）
+  jobEvidence?: string;
+  dimension?: MatchDimensionKey;
   isHard: boolean;
+}
+
+export interface CapabilityDetail {
+  id?: string;
+  title?: string;
+  requirement: string;
+  status: CapabilityDetailStatus;
+  jobEvidence?: string;
+  evidence?: string;
+  analysisSection?: 'hard' | 'skill' | 'gap';
+  dimension?: CapabilityDimensionKey;
+  isHard?: boolean;
+}
+
+export type CapabilityDimensionKey =
+  | 'skill'
+  | 'experience'
+  | 'project'
+  | 'achievement'
+  | 'education'
+  | 'industry';
+export type MatchDimensionKey = CapabilityDimensionKey | 'other';
+
+export type CapabilityImportance = 'core' | 'important' | 'normal' | 'bonus';
+export type CapabilityRequiredDepth = 'basic' | 'familiar' | 'practical' | 'expert';
+export type CapabilityEvidenceLevel = 'none' | 'mentioned' | 'used' | 'owned' | 'achieved';
+export type CapabilityRelevance = 'none' | 'weak' | 'partial' | 'high' | 'exact';
+export type CapabilityMatchStatus = 'matched' | 'partial' | 'missing' | 'not_required';
+
+export interface CapabilityEvidenceItem {
+  id?: string;
+  title?: string;
+  requirement: string;
+  dimension: MatchDimensionKey;
+  isHard?: boolean;
+  importance: CapabilityImportance;
+  requiredDepth: CapabilityRequiredDepth;
+  jobEvidence: string;
+  resumeEvidenceLevel: CapabilityEvidenceLevel;
+  relevance: CapabilityRelevance;
+  resumeEvidence?: string;
+}
+
+export interface CapabilityDimension {
+  key: CapabilityDimensionKey;
+  label: string;
+  jobScore: number;
+  resumeScore: number;
+  matchScore: number | null;
+  weight: number;
+  status: CapabilityMatchStatus;
+  matchedCount: number;
+  partialCount: number;
+  missingCount: number;
+  details: CapabilityDetail[];
+}
+
+export interface CapabilityRadarResult {
+  scoringVersion: string;
+  dimensions: CapabilityDimension[];
+  advantages: string[];
+  keyGaps: string[];
 }
 
 // 匹配分析结果
@@ -65,6 +138,7 @@ export interface MatchResult {
   skillMatch: MatchItem[];          // 能力匹配
   gaps: MatchItem[];                // 缺口项
   summary: string;                  // 总体评价
+  capabilityRadar?: CapabilityRadarResult;
 }
 
 // 简历生成请求
