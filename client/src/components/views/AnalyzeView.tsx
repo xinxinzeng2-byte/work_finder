@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { parseJobDescription, analyzeMatch, generateFollowUpQuestion, formatFollowUpExperience } from '../../services/api';
-import { clearWorkflowDraft, saveJob, type SavedJob, generateId } from '../../utils/storage';
-import { saveResume } from '../../utils/storage';
+import { clearWorkflowDraft, saveCustomizedResume, saveJob, saveResume, type SavedJob, generateId } from '../../utils/storage';
 import type { ParsedResume, ParsedJobDescription, MatchResult, GeneratedResume, AtomicExperience, MatchItem, MatchDimensionKey } from '../../types';
 import { Loading, InlineLoading } from '../Loading';
 import { generateTailoredResume } from '../../services/api';
@@ -241,6 +240,31 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
     try {
       const result = await generateTailoredResume(resume, jd, match || undefined);
       setGenerated(result);
+      const sourceResumeIds = initialJob?.sourceResumeIds || [];
+      saveCustomizedResume({
+        basicInfo: resume.basicInfo,
+        rawText: result.summary,
+        skills: resume.skills,
+        experiences: result.experiences.map((item) => ({
+          id: generateId(),
+          company: item.company,
+          role: item.role,
+          period: item.period,
+          description: item.description,
+          achievements: item.highlights,
+          skillsUsed: [],
+          rawText: `${item.description}\n${item.highlights.join('\n')}`,
+        })),
+      }, {
+        name: `${jd.position || '岗位'}${jd.company ? ` @${jd.company}` : ''}`,
+        sourceIds: sourceResumeIds,
+        targetJob: {
+          position: jd.position || '',
+          company: jd.company,
+          matchScore: match?.score || 0,
+          jobId: currentJobId || undefined,
+        },
+      });
 
       // 更新收录的岗位
       if (currentJobId) {

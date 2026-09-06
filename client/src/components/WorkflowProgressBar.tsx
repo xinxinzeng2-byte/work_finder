@@ -1,14 +1,12 @@
 import React from 'react';
 
-export type WorkflowStep = 'import-resume' | 'extract-skills' | 'input-job' | 'ai-match' | 'supplement' | 'generate';
+export type WorkflowStep = 'import-resume' | 'extract-skills' | 'input-job' | 'ai-match';
 
 const STEPS: Array<{ id: WorkflowStep; label: string }> = [
   { id: 'import-resume', label: '导入简历' },
   { id: 'extract-skills', label: 'AI提取能力' },
   { id: 'input-job', label: '输入岗位' },
   { id: 'ai-match', label: 'AI匹配分析' },
-  { id: 'supplement', label: '补录缺口' },
-  { id: 'generate', label: '生成简历' },
 ];
 
 interface Props {
