@@ -9,7 +9,10 @@ import type {
   AtomicSkill,
   JobRequirement,
   MatchItem,
+  CapabilityEvidenceItem,
+  MatchDimensionKey,
 } from '../types';
+import { calculateCapabilityRadar, normalizeCapabilityEvidence } from './capabilityScoring';
 
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 const MODEL = 'deepseek-chat';
@@ -180,7 +183,8 @@ export async function parseJobDescription(
 规则：
 1. 区分"硬性条件"（学历、年限、城市、证书等）和"能力要求"（技能、经验、软素质）
 2. 每个要求项要具体、可验证
-3. 输出必须是合法 JSON`;
+3. 每个要求项提供独立的 title：用简短名词短语概括能力主题，通常 4–12 个汉字，最多 32 个字符（英文技术名可保留）。例如“大模型应用开发”“工程化与系统集成”“学历要求”。不得复制完整要求或简单截断前几个字；item 保留完整要求及所有限定条件
+4. 输出必须是合法 JSON`;
 
   const userPrompt = `请解析以下岗位描述，提取结构化要求。
 
@@ -198,6 +202,7 @@ ${jdText}
   "requirements": [
     {
       "category": "分类（硬性条件/能力要求/加分项）",
+      "title": "能力短标题，例如大模型应用开发",
       "item": "具体要求项",
       "isHard": true或false
     }
@@ -220,7 +225,10 @@ ${jdText}
       position: parsed.position,
       salary: parsed.salary,
       city: parsed.city,
-      requirements: (parsed.requirements || []) as JobRequirement[],
+      requirements: ((parsed.requirements || []) as JobRequirement[]).map(requirement => ({
+        ...requirement,
+        title: typeof requirement.title === 'string' ? requirement.title.trim() || undefined : undefined,
+      })),
       rawText: jdText,
     };
   } catch (error) {
@@ -240,15 +248,22 @@ export async function analyzeMatch(
   resume: ParsedResume,
   jobDescription: ParsedJobDescription
 ): Promise<MatchResult> {
-  const systemPrompt = `你是一个资深招聘顾问。你的任务是对比求职者的简历和岗位要求，进行差异化分析。
+  const systemPrompt = `你是一个资深招聘顾问。你的职责是从岗位描述和简历中提取可追溯的结构化判断，不负责计算最终分数。
 
 规则：
-1. 硬性条件（学历、年限、城市等）逐条核查是否符合
-2. 能力要求：逐条比对简历中是否有对应能力，并给出证据（来自哪段经历）
-3. 缺口：岗位要求但简历中没有的，标记为缺口
-4. 匹配分数：0-100 分，综合评估。75 分以上为良好匹配
-5. 证据要具体，引用简历中的真实经历
-6. 输出必须是合法 JSON`;
+1. 硬性条件（学历、最低年限、城市、必须证书等）单独逐条核查，不放入六维能力证据
+2. 每条非硬性岗位要求必须归入且只能归入一个维度：skill 技能、experience 经验、project 项目、achievement 成果、education 教育专业、industry 行业领域
+3. importance 只能为 core/important/normal/bonus，对应核心必须/明确要求/一般要求/优先加分
+4. requiredDepth 只能为 basic/familiar/practical/expert，对应了解/熟悉使用/独立实践/精通主导
+5. resumeEvidenceLevel 只能为 none/mentioned/used/owned/achieved，对应未发现/仅提及/实际使用/独立负责/有成果
+6. relevance 只能为 none/weak/partial/high/exact
+7. jobEvidence 和 resumeEvidence 必须是输入原文中的短摘录；找不到简历原文时 resumeEvidence 为空，resumeEvidenceLevel 与 relevance 必须为 none
+8. 不得推测候选人未写在简历中的能力，不输出 score、维度分、权重或雷达图，它们由后端算法计算
+9. 每一条岗位要求都必须出现一次，硬性要求也要进入 capabilityEvidence；使用稳定 id，且 hardConditionCheck、skillMatch、gaps 不得重复表达同一要求
+10. 无法归入六维的要求使用 dimension=other，不得丢弃
+11. skillMatch 必须区分 status：matched、partial、missing；gaps 收录岗位要求但简历证据不足的项目
+12. 每条要求提供独立的 title：简短的能力主题名词短语，通常 4–12 个汉字，最多 32 个字符；如“大模型应用开发”“工程化与系统集成”“学历要求”。优先沿用输入中的标题，没有时根据完整要求概括，不得复制完整要求或机械截断；requirement 保留完整要求和所有限定条件。同一要求在各数组中的 title 必须一致，title 不作为唯一标识或匹配依据
+13. 输出必须是合法 JSON`;
 
   // 构造简历摘要
   const resumeSummary = {
@@ -273,6 +288,7 @@ export async function analyzeMatch(
     公司: jobDescription.company,
     要求列表: jobDescription.requirements.map((r) => ({
       分类: r.category,
+      标题: r.title,
       要求: r.item,
       是否硬性: r.isHard,
     })),
@@ -288,29 +304,57 @@ ${JSON.stringify(jdSummary, null, 2)}
 
 请输出以下 JSON 格式：
 {
-  "score": 匹配分数（0-100 的整数）,
   "hardConditionCheck": [
     {
+      "id": "req_001",
+      "title": "能力短标题",
       "requirement": "要求项",
       "matched": true或false,
+      "status": "matched/partial/missing",
       "evidence": "符合/不符合的说明",
+      "jobEvidence": "岗位原文短摘录",
+      "dimension": "skill/experience/project/achievement/education/industry 或 other",
       "isHard": true
     }
   ],
   "skillMatch": [
     {
+      "id": "req_002",
+      "title": "能力短标题",
       "requirement": "能力要求项",
       "matched": true或false,
-      "evidence": "简历中的对应证据（如有）",
+      "status": "matched/partial/missing",
+      "jobEvidence": "岗位原文短摘录",
+      "dimension": "skill/experience/project/achievement/education/industry 或 other",
+      "evidence": "简历中的对应证据；部分匹配时说明缺少什么",
       "isHard": false
     }
   ],
   "gaps": [
     {
+      "id": "req_003",
+      "title": "能力短标题",
       "requirement": "缺口项",
       "matched": false,
+      "status": "missing/partial",
+      "jobEvidence": "岗位原文短摘录",
+      "dimension": "skill/experience/project/achievement/education/industry 或 other",
       "evidence": "简历中暂无对应经历",
       "isHard": true或false
+    }
+  ],
+  "capabilityEvidence": [
+    {
+      "id": "与岗位要求对应的稳定唯一标识，例如 req_001",
+      "title": "能力短标题，与对应匹配项一致",
+      "requirement": "标准化后的岗位要求项（硬性与非硬性都必须覆盖）",
+      "dimension": "skill/experience/project/achievement/education/industry 或 other",
+      "importance": "core/important/normal/bonus",
+      "requiredDepth": "basic/familiar/practical/expert",
+      "jobEvidence": "岗位原文短摘录",
+      "resumeEvidenceLevel": "none/mentioned/used/owned/achieved",
+      "relevance": "none/weak/partial/high/exact",
+      "resumeEvidence": "简历原文短摘录；未发现时为空"
     }
   ],
   "summary": "总体评价（2-3 句话，说明匹配情况和主要差距）"
@@ -326,17 +370,35 @@ ${JSON.stringify(jdSummary, null, 2)}
   );
 
   try {
-    const parsed = JSON.parse(content);
+    const parsed = JSON.parse(content) as Record<string, unknown>;
+    const capabilityEvidence = normalizeCapabilityEvidence(parsed.capabilityEvidence) as CapabilityEvidenceItem[];
+    const { radar, score } = calculateCapabilityRadar(capabilityEvidence);
     return {
-      score: parsed.score,
-      hardConditionCheck: (parsed.hardConditionCheck || []) as MatchItem[],
-      skillMatch: (parsed.skillMatch || []) as MatchItem[],
-      gaps: (parsed.gaps || []) as MatchItem[],
-      summary: parsed.summary,
+      score,
+      hardConditionCheck: normalizeMatchItems(parsed.hardConditionCheck, capabilityEvidence, true),
+      skillMatch: normalizeMatchItems(parsed.skillMatch, capabilityEvidence, false),
+      gaps: normalizeMatchItems(parsed.gaps, capabilityEvidence),
+      summary: typeof parsed.summary === 'string' ? parsed.summary : '已完成六维能力匹配分析。',
+      capabilityRadar: radar,
     };
   } catch (error) {
     throw new Error(`匹配分析失败: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+function normalizeMatchItems(value: unknown, evidence: CapabilityEvidenceItem[], hard?: boolean): MatchItem[] {
+  if (!Array.isArray(value)) return [];
+  const byId = new Map(evidence.map((item) => [item.id, item]));
+  const byRequirement = new Map(evidence.map((item) => [item.requirement, item]));
+  return value.flatMap((raw) => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+    const item = raw as Record<string, unknown>;
+    const requirement = typeof item.requirement === 'string' ? item.requirement.trim() : '';
+    const source = (typeof item.id === 'string' && byId.get(item.id)) || byRequirement.get(requirement);
+    if (!requirement && !source) return [];
+    const status = item.status === 'matched' || item.status === 'partial' || item.status === 'missing' ? item.status : item.matched === true ? 'matched' : 'missing';
+    return [{ id: source?.id || (typeof item.id === 'string' ? item.id : undefined), title: source?.title || (typeof item.title === 'string' ? item.title.trim() || undefined : undefined), requirement: source?.requirement || requirement, matched: status === 'matched', status, evidence: typeof item.evidence === 'string' ? item.evidence : source?.resumeEvidence, jobEvidence: source?.jobEvidence || (typeof item.jobEvidence === 'string' ? item.jobEvidence : undefined), dimension: source?.dimension || (typeof item.dimension === 'string' ? item.dimension as MatchDimensionKey : undefined), isHard: typeof hard === 'boolean' ? hard : source?.isHard === true || item.isHard === true }];
+  });
 }
 
 // ============================================================

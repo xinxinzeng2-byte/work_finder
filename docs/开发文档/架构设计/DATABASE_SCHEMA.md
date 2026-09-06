@@ -1,6 +1,6 @@
 # 数据库表结构说明（Neon Postgres）
 
-> 求职助手多用户存储层的数据字典。配套总体方案见 `DATABASE_PLAN.md`。
+> 求职助手多用户存储层的数据字典。配套总体方案见 [数据库接入实施计划](../开发计划/DATABASE_PLAN.md)。
 > 数据库：Neon Postgres（免费层），访问方式：`postgres.js` 直连，Vercel serverless 函数内查询。
 
 ---

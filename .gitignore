@@ -31,5 +31,11 @@ uploads/
 
 # 本地文档，不推送
 使用说明.md
+
+# 本地参考资料与生成产物，不推送
+attachments/
+output/
+tmp_reference/
+
 .vercel
 .env*

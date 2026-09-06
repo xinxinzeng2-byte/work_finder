@@ -37,9 +37,13 @@ export interface ParsedResume {
 }
 
 export interface JobRequirement {
+  id?: string;
+  title?: string;
   category: string;
   item: string;
   isHard: boolean;
+  dimension?: MatchDimensionKey;
+  jobEvidence?: string;
 }
 
 export interface ParsedJobDescription {
@@ -51,11 +55,61 @@ export interface ParsedJobDescription {
   rawText: string;
 }
 
+export type CapabilityDetailStatus = 'matched' | 'partial' | 'missing';
+
 export interface MatchItem {
+  id?: string;
+  title?: string;
   requirement: string;
   matched: boolean;
+  status?: CapabilityDetailStatus;
   evidence?: string;
+  jobEvidence?: string;
+  dimension?: MatchDimensionKey;
   isHard: boolean;
+}
+
+export interface CapabilityDetail {
+  title?: string;
+  requirement: string;
+  status: CapabilityDetailStatus;
+  jobEvidence?: string;
+  evidence?: string;
+  dimension?: CapabilityDimensionKey | 'other';
+  isHard?: boolean;
+  analysisSection?: 'hard' | 'skill' | 'gap';
+}
+
+export type CapabilityDimensionKey =
+  | 'skill'
+  | 'experience'
+  | 'project'
+  | 'achievement'
+  | 'education'
+  | 'industry';
+export type MatchDimensionKey = CapabilityDimensionKey | 'other';
+
+export type CapabilityMatchStatus = 'matched' | 'partial' | 'missing' | 'not_required';
+
+export interface CapabilityDimension {
+  key: CapabilityDimensionKey;
+  label: string;
+  jobScore: number;
+  resumeScore: number;
+  matchScore: number | null;
+  weight: number;
+  status: CapabilityMatchStatus;
+  matchedCount: number;
+  partialCount: number;
+  missingCount: number;
+  details?: CapabilityDetail[];
+}
+
+export interface CapabilityRadarResult {
+  scoringVersion: string;
+  dimensions: CapabilityDimension[];
+  advantages: string[];
+  keyGaps: string[];
 }
 
 export interface MatchResult {
@@ -64,6 +118,7 @@ export interface MatchResult {
   skillMatch: MatchItem[];
   gaps: MatchItem[];
   summary: string;
+  capabilityRadar?: CapabilityRadarResult;
 }
 
 export interface GeneratedResume {
