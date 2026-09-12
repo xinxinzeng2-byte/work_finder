@@ -1,5 +1,37 @@
 # 更新日志
 
+## 岗位匹配分数计算方式加强（2026-09-12）
+
+### 产品功能
+
+- **新增独立岗位匹配分析 V2 与确定性能力评分**
+  - 摘要：新增岗位要求标准化、简历证据对齐、硬性条件检查和六维能力评分 V2 流程；AI 只负责结构化提取与证据判断，评分、权重、状态、优势和缺口由服务端确定性计算，并通过独立 API 入口保留现有 radar-v1 流程。
+  - 涉及文件：`api/match-v2.ts`、`server/src/controllers/matchControllerV2.ts`、`server/src/routes/aiRoutes.ts`、`server/src/services/capabilityScoringV2.ts`、`server/src/services/matchAnalysisV2.ts`、`server/src/services/deepseekClient.ts`、`server/src/types/index.ts`、`client/src/types/index.ts`、`client/src/services/api.ts`、`client/package.json`、`server/package.json`、`vercel.json`
+
+- **支持简历版本、分析输入指纹与历史重评关联**
+  - 摘要：为简历和岗位分析保存版本、评分版本、分析所用简历版本及输入指纹，补充 API 与服务端数据路由的读写映射，并提供数据库迁移脚本，支持后续历史分析重评与结果追溯。
+  - 涉及文件：`api/_lib/data.ts`、`api/data/[...path].ts`、`server/src/routes/dataRoutes.ts`、`client/src/utils/storage.ts`、`db/schema.sql`、`db/migrations/20260912_add_analysis_versions.sql`
+
+- **完善 V2 分析详情与岗位工作流的数据兼容**
+  - 摘要：前端兼容 radar-v1 与 radar-v2 结果，展示重要度、评分占比、硬性条件、证据状态和计算详情；同步调整岗位分析、岗位申请、简历管理、设置和样式相关的数据流，保留历史结果的安全降级边界。
+  - 涉及文件：`client/src/components/CapabilityRadar.tsx`、`client/src/components/ScoreBadge.tsx`、`client/src/components/SettingsModal.tsx`、`client/src/components/analysis-detail.css`、`client/src/components/views/AnalyzeView.tsx`、`client/src/components/views/JobApplicationsView.tsx`、`client/src/components/views/JobsWorkflowView.tsx`、`client/src/components/views/ResumeManagerView.tsx`
+
+### 测试与文档
+
+- **补充评分、AI 客户端、V2 匹配和前端兼容性测试**
+  - 摘要：增加评分基线与黄金样本、V2 评分、DeepSeek JSON 客户端、V2 匹配分析、云端存储和分析详情渲染测试，覆盖固定评分、缓存、错误响应、历史结果兼容及前端展示边界。
+  - 涉及文件：`server/src/services/capabilityScoring.baseline.test.ts`、`server/src/services/capabilityScoringV2.test.ts`、`server/src/services/deepseekClient.test.ts`、`server/src/services/fixtures/jobMatchingGoldenFixtures.ts`、`server/src/services/matchAnalysisV2.test.ts`、`client/tests/analysis-render.test.tsx`、`client/tests/run-storage-tests.mjs`、`client/tests/storage-cloud.test.ts`、`client/tests/storage.test.ts`
+
+- **更新评分规则、重构计划与部署迁移说明**
+  - 摘要：同步记录 V2 评分规则、岗位匹配重构边界和历史分析版本迁移步骤，明确部署前需执行的数据库迁移。
+  - 涉及文件：`docs/开发文档/架构设计/CAPABILITY_RADAR_SCORING.md`、`docs/开发文档/开发计划/JOB_MATCHING_REFACTOR_PLAN.md`、`docs/部署说明/DEPLOY.md`
+
+### 文档与规范
+
+- **记录本次 GitHub 提交范围**
+  - 摘要：按项目唯一更新日志格式记录岗位匹配分析 V2、版本化历史重评、测试和部署文档的交付边界，不包含依赖目录、构建产物或本地环境文件。
+  - 涉及文件：`CHANGELOG.md`
+
 ## 修复新增岗位错误恢复历史步骤（2026-09-06）
 
 ### 修复与质量

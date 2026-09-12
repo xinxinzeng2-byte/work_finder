@@ -147,7 +147,7 @@ export const ResumeManagerView: React.FC<Props> = ({ onResumeUpdate, onNeedApiKe
               <p className="mt-1 text-xs text-ink-secondary">
                 {item.fileName || '粘贴文本'} · {item.resume.skills.length} 项能力 · {item.resume.experiences.length} 段经历 · {new Date(item.uploadedAt).toLocaleDateString('zh-CN')}
               </p>
-              {item.targetJob && <p className="mt-1 text-xs text-purple-600">目标岗位：{item.targetJob.position} · 匹配度 {item.targetJob.matchScore}</p>}
+              {item.targetJob && <p className="mt-1 text-xs text-purple-600">目标岗位：{item.targetJob.position} · 匹配度 {item.targetJob.matchScore ?? '—'}</p>}
             </div>
             <div className="flex flex-wrap justify-end gap-2">
               <button onClick={() => setPreviewItem(item)} className="btn-ghost h-8 px-3 text-xs">预览</button>

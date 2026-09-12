@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { parseJobDescription, analyzeMatch, generateFollowUpQuestion, formatFollowUpExperience } from '../../services/api';
-import { clearWorkflowDraft, saveCustomizedResume, saveJob, saveResume, type SavedJob, generateId } from '../../utils/storage';
-import type { ParsedResume, ParsedJobDescription, MatchResult, GeneratedResume, AtomicExperience, MatchItem, MatchDimensionKey } from '../../types';
+import { parseJobDescription, analyzeMatchV2, generateFollowUpQuestion, formatFollowUpExperience } from '../../services/api';
+import { clearWorkflowDraft, getCurrentResumeItem, loadResumes, replaceJobAnalysis, replaceResumeData, saveCustomizedResume, saveJob, type ResumeItem, type SavedJob, generateId } from '../../utils/storage';
+import { isMatchResultV2, type AnalysisMatchResult, type CapabilityHardConditionStatus, type CapabilityRequirementScoreV2, type ParsedResume, type ParsedJobDescription, type GeneratedResume, type AtomicExperience, type MatchItem, type MatchDimensionKey } from '../../types';
 import { Loading, InlineLoading } from '../Loading';
 import { generateTailoredResume } from '../../services/api';
 import { CapabilityRadar } from '../CapabilityRadar';
@@ -9,12 +9,41 @@ import '../analysis-detail.css';
 
 const dimensionLabels: Record<MatchDimensionKey, string> = { skill: '技能', experience: '经验', project: '项目', achievement: '成果', education: '教育专业', industry: '行业领域', other: '其他要求' };
 const itemDimension = (item: MatchItem): MatchDimensionKey => item.dimension && item.dimension in dimensionLabels ? item.dimension : 'other';
+export const matchesSelectedDimension = (item: MatchItem, linked: boolean, selectedDimension: MatchDimensionKey | 'all'): boolean =>
+  !linked || selectedDimension === 'all' || itemDimension(item) === selectedDimension;
+const compactEvidenceForDisplay = (value: string, requirement: string): string => {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= 120) return normalized;
+  const terms = [...(requirement.match(/[A-Za-z][A-Za-z0-9+#.-]{1,}/g) || []), ...(requirement.match(/[\u4e00-\u9fff]{2,}/g) || [])].map(term => term.toLowerCase());
+  const chunks = normalized.split(/(?<=[。！？；.!?;])/u).map(chunk => chunk.trim()).filter(Boolean);
+  const ranked = chunks.map((chunk, index) => ({ chunk, index, score: terms.reduce((total, term) => total + (chunk.toLowerCase().includes(term) ? 1 : 0), 0) })).sort((a, b) => b.score - a.score || a.index - b.index);
+  let selected = '';
+  for (const item of ranked) {
+    const candidate = selected ? `${selected}；${item.chunk}` : item.chunk;
+    if (candidate.length > 120) continue;
+    selected = candidate;
+    if (selected.length >= 70) break;
+  }
+  return `${selected || normalized.slice(0, 120)}${(selected || normalized.slice(0, 120)).length < normalized.length ? '…' : ''}`;
+};
 const statusMeta = {
   missing: { label: '未发现', symbol: '○', note: '简历中暂未找到明确证据' },
   partial: { label: '部分匹配', symbol: '△', note: '已有相关经历，仍需补充细节' },
   matched: { label: '已匹配', symbol: '✓', note: '已找到支持岗位要求的证据' },
 };
 const statusOrder = ['missing', 'partial', 'matched'] as const;
+const hardStatusMeta: Record<CapabilityHardConditionStatus, { label: string; symbol: string; className: string }> = {
+  met: { label: '已匹配', symbol: '✓', className: 'matched' },
+  not_met: { label: '未发现', symbol: '○', className: 'missing' },
+  unknown: { label: '部分匹配', symbol: '△', className: 'partial' },
+  not_applicable: { label: '已匹配', symbol: '✓', className: 'matched' },
+};
+
+interface AnalysisRequirementItem extends MatchItem {
+  isScoreable?: boolean;
+  hardConditionStatus?: CapabilityHardConditionStatus;
+  scoreDetail?: CapabilityRequirementScoreV2;
+}
 
 interface Props {
   resume: ParsedResume | null;
@@ -29,7 +58,9 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
   const [jdText, setJdText] = useState(initialJob?.jd.rawText || '');
   const [stage, setStage] = useState<Stage>(initialJob ? 'result' : 'idle');
   const [jd, setJd] = useState<ParsedJobDescription | null>(initialJob?.jd || null);
-  const [match, setMatch] = useState<MatchResult | null>(initialJob?.matchResult || null);
+  const [match, setMatch] = useState<AnalysisMatchResult | null>(initialJob?.matchResult || null);
+  const [jobRecord, setJobRecord] = useState<SavedJob | null>(initialJob || null);
+  const [activeResume, setActiveResume] = useState<ParsedResume | null>(resume);
   const [generated, setGenerated] = useState<GeneratedResume | null>(initialJob?.generatedResume || null);
   const [currentJobId, setCurrentJobId] = useState<string | null>(initialJob?.id || null);
   const [error, setError] = useState('');
@@ -40,12 +71,35 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
   const [chatHistory, setChatHistory] = useState<{ role: 'ai' | 'user'; content: string }[]>([]);
   const [loadingQuestion, setLoadingQuestion] = useState(false);
   const [loadingFormat, setLoadingFormat] = useState(false);
+  const [supplementResumeItem, setSupplementResumeItem] = useState<ResumeItem | null>(null);
   const [supplementedGaps, setSupplementedGaps] = useState<Set<string>>(new Set(initialJob?.supplementedGaps || []));
   const [linked, setLinked] = useState(true);
   const [selectedDimension, setSelectedDimension] = useState<MatchDimensionKey | 'all'>('skill');
 
   const uniqueMatchItems = useMemo(() => {
-    const byRequirement = new Map<string, MatchItem>();
+    if (match && isMatchResultV2(match)) {
+      const scoreById = new Map(match.capabilityRadar.dimensions.flatMap(dimension => dimension.details).map(detail => [detail.id, detail]));
+      return match.capabilityEvidence.map((item): AnalysisRequirementItem => {
+        const scoreDetail = scoreById.get(item.id);
+        const status = scoreDetail?.status === 'matched' ? 'matched' : scoreDetail?.status === 'partial' ? 'partial' : 'missing';
+        const hardStatus = item.hardConditionStatus;
+        return {
+          id: item.id,
+          title: item.title,
+          requirement: item.requirement,
+          matched: item.isHard ? hardStatus === 'met' : status === 'matched',
+          status: item.isHard && hardStatus === 'unknown' ? 'partial' : status,
+          evidence: item.resumeEvidence,
+          jobEvidence: item.jobEvidence,
+          dimension: item.dimension,
+          isHard: item.isHard,
+          isScoreable: item.isScoreable,
+          hardConditionStatus: hardStatus,
+          scoreDetail,
+        };
+      });
+    }
+    const byRequirement = new Map<string, AnalysisRequirementItem>();
     const requirementKey = (text: string) => text.trim().replace(/\s+/g, ' ');
     // Historical records can have dimensions/status only inside radar details.
     // Reuse those saved associations; never infer capability from display text.
@@ -61,7 +115,7 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
       const key = requirementKey(item.requirement);
       const detail = radarDetails.get(key);
       const previous = byRequirement.get(key);
-      const normalized: MatchItem = {
+      const normalized: AnalysisRequirementItem = {
         ...item,
         title: item.title?.trim() || detail?.title?.trim() || undefined,
         dimension: item.dimension ?? detail?.dimension,
@@ -85,7 +139,7 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
   const orderedMatchItems = useMemo(() => {
     const statusRank = { missing: 0, partial: 1, matched: 2 };
     return uniqueMatchItems
-      .filter((item) => !linked || selectedDimension === 'all' || itemDimension(item) === selectedDimension)
+      .filter((item) => matchesSelectedDimension(item, linked, selectedDimension))
       .sort((a, b) => {
         const aStatus = a.status || (a.matched ? 'matched' : 'missing');
         const bStatus = b.status || (b.matched ? 'matched' : 'missing');
@@ -94,7 +148,7 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
   }, [linked, selectedDimension, uniqueMatchItems]);
 
   const handleAnalyze = async () => {
-    if (!resume) {
+    if (!activeResume) {
       setError('当前没有可用的简历，无法进行新的分析。请先在简历与能力库中导入简历。');
       return;
     }
@@ -109,7 +163,7 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
       setJd(parsedJd);
 
       setStage('analyzing');
-      const matchResult = await analyzeMatch(resume, parsedJd);
+      const matchResult = await analyzeMatchV2(activeResume, parsedJd);
       setMatch(matchResult);
 
       // 自动保存为收录岗位
@@ -120,9 +174,14 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
         matchResult,
         savedAt: new Date().toISOString(),
         status: 'analyzed',
-        resumeSnapshot: resume,
+        resumeSnapshot: activeResume,
+        analyzedResumeId: getCurrentResumeItem()?.id,
+        analyzedResumeVersion: getCurrentResumeItem()?.version,
+        scoringVersion: matchResult.metadata.scoringVersion,
+        inputHash: matchResult.metadata.inputHash,
       };
       await saveJob(newJob);
+      setJobRecord(newJob);
       setCurrentJobId(jobId);
       onJobSaved();
 
@@ -134,8 +193,21 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
   };
 
   const handleReanalyze = async () => {
-    if (!initialJob || !jd) return;
-    const analysisResume = initialJob.resumeSnapshot || resume;
+    if (!jobRecord || !jd) return;
+    const resumes = loadResumes();
+    let resumeItem = jobRecord.analyzedResumeId ? resumes.find(item => item.id === jobRecord.analyzedResumeId && item.type === 'original') : undefined;
+    let analysisResume = resumeItem?.resume || (!jobRecord.analyzedResumeId ? jobRecord.resumeSnapshot : undefined);
+    if (jobRecord.analyzedResumeId && !resumeItem) {
+      const current = getCurrentResumeItem();
+      if (!current) {
+        setError('原分析使用的简历已不存在，当前也没有可用简历。原结果已保留。');
+        return;
+      }
+      if (!window.confirm('原分析使用的简历已不存在。是否改用当前简历重新分析？\n\n选择“取消”将保留原结果。')) return;
+      resumeItem = current;
+      analysisResume = current.resume;
+    }
+    analysisResume ||= activeResume || undefined;
     if (!analysisResume) {
       setError('这条历史岗位没有保存简历快照，且当前没有可用简历，暂时无法重新计算。');
       return;
@@ -144,11 +216,11 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
     setError('');
     setStage('analyzing');
     try {
-      const matchResult = await analyzeMatch(analysisResume, jd);
+      const matchResult = await analyzeMatchV2(analysisResume, jd);
       const updatedAt = new Date().toISOString();
       const updatedJob: SavedJob = {
-        ...initialJob,
-        id: initialJob.id,
+        ...jobRecord,
+        id: jobRecord.id,
         jd,
         matchResult,
         matchScore: matchResult.score,
@@ -156,10 +228,16 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
         analyzedAt: updatedAt,
         updatedAt,
         resumeSnapshot: analysisResume,
+        analyzedResumeId: resumeItem?.id || jobRecord.analyzedResumeId,
+        analyzedResumeVersion: resumeItem?.version || jobRecord.analyzedResumeVersion,
+        scoringVersion: matchResult.metadata.scoringVersion,
+        inputHash: matchResult.metadata.inputHash,
       };
-      await saveJob(updatedJob);
+      await replaceJobAnalysis(updatedJob);
       setMatch(matchResult);
-      setCurrentJobId(initialJob.id);
+      setJobRecord(updatedJob);
+      setActiveResume(analysisResume);
+      setCurrentJobId(jobRecord.id);
       onJobSaved();
       setStage('result');
     } catch (err) {
@@ -169,17 +247,30 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
   };
 
   const handleSelectGap = async (gap: string) => {
-    if (!resume) {
+    const resumes = loadResumes();
+    const linkedId = jobRecord?.analyzedResumeId || (jobRecord?.sourceResumeIds?.length === 1 ? jobRecord.sourceResumeIds[0] : undefined);
+    let target = linkedId ? resumes.find(item => item.id === linkedId && item.type === 'original') : undefined;
+    if (!target) {
+      const current = getCurrentResumeItem();
+      if (!current) {
+        setError('当前没有可编辑的原始简历，请先在“简历与能力库”中选择或导入简历。');
+        return;
+      }
+      if (jobRecord && !window.confirm('这条岗位找不到原分析绑定的简历。是否将补录写入当前简历并用它重评？\n\n选择“取消”不会修改任何数据。')) return;
+      target = current;
+    }
+    if (!target) {
       setError('当前没有可用的简历，暂时无法补录缺口。');
       return;
     }
+    setSupplementResumeItem(target);
     setSelectedGap(gap);
     setAnswer('');
     setChatHistory([]);
     setLoadingQuestion(true);
     setStage('supplementing');
     try {
-      const q = await generateFollowUpQuestion(gap, resume);
+      const q = await generateFollowUpQuestion(gap, target.resume);
       setChatHistory([{ role: 'ai', content: q }]);
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成问题失败');
@@ -189,7 +280,7 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
   };
 
   const handleSubmitAnswer = async () => {
-    if (!resume || !answer.trim() || !selectedGap) return;
+    if (!supplementResumeItem || !answer.trim() || !selectedGap) return;
     setLoadingFormat(true);
     const userMsg = answer.trim();
     setChatHistory((prev) => [...prev, { role: 'user', content: userMsg }]);
@@ -198,10 +289,10 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
     try {
       const newExp: AtomicExperience = await formatFollowUpExperience(userMsg, selectedGap);
       const updatedResume: ParsedResume = {
-        ...resume,
-        experiences: [...resume.experiences, newExp],
+        ...supplementResumeItem.resume,
+        experiences: [...supplementResumeItem.resume.experiences, newExp],
         skills: [
-          ...resume.skills,
+          ...supplementResumeItem.resume.skills,
           {
             id: `skill_${Date.now()}`,
             category: '补录',
@@ -211,40 +302,63 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
           },
         ],
       };
-      saveResume(updatedResume);
-      onResumeUpdate?.(updatedResume);
+      const updatedResumeItem = await replaceResumeData(supplementResumeItem.id, updatedResume);
+      setActiveResume(updatedResume);
+      if (updatedResumeItem.isCurrent) onResumeUpdate?.(updatedResume);
       const nextSupplemented = new Set([...supplementedGaps, selectedGap]);
-      setSupplementedGaps(nextSupplemented);
-      if (initialJob && jd && match) {
-        await saveJob({ ...initialJob, jd, matchResult: match, supplementedGaps: Array.from(nextSupplemented), resumeSnapshot: updatedResume, status: 'supplementing', updatedAt: new Date().toISOString() });
+      if (jobRecord && jd) {
+        const matchResult = await analyzeMatchV2(updatedResume, jd);
+        const updatedAt = new Date().toISOString();
+        const updatedJob: SavedJob = {
+          ...jobRecord,
+          jd,
+          matchResult,
+          matchScore: matchResult.score,
+          mainGaps: matchResult.gaps.map(item => item.requirement),
+          supplementedGaps: Array.from(nextSupplemented),
+          resumeSnapshot: updatedResume,
+          analyzedResumeId: updatedResumeItem.id,
+          analyzedResumeVersion: updatedResumeItem.version,
+          scoringVersion: matchResult.metadata.scoringVersion,
+          inputHash: matchResult.metadata.inputHash,
+          status: 'analyzed',
+          analyzedAt: updatedAt,
+          updatedAt,
+        };
+        await replaceJobAnalysis(updatedJob);
+        setJobRecord(updatedJob);
+        setMatch(matchResult);
+        setSupplementedGaps(nextSupplemented);
         onJobSaved();
       }
 
       const aiReply = `已整理并存入经历库：\n\n${newExp.company} · ${newExp.role}\n${newExp.achievements.map((a) => `· ${a}`).join('\n')}`;
       setChatHistory((prev) => [...prev, { role: 'ai', content: aiReply }]);
       setSelectedGap(null);
+      setSupplementResumeItem(null);
       setStage('result');
     } catch (err) {
-      setError(err instanceof Error ? err.message : '处理失败');
+      setError(`补录处理未完成：${err instanceof Error ? err.message : '处理失败'}。原岗位分析已保留。`);
+      setStage('result');
     } finally {
       setLoadingFormat(false);
     }
   };
 
   const handleGenerate = async () => {
-    if (!jd || !resume) {
+    if (!jd || !activeResume) {
       setError('当前没有可用的简历，无法生成定制简历。请先在简历与能力库中导入简历。');
       return;
     }
     setStage('generating');
     try {
-      const result = await generateTailoredResume(resume, jd, match || undefined);
+      const result = await generateTailoredResume(activeResume, jd, match || undefined);
       setGenerated(result);
-      const sourceResumeIds = initialJob?.sourceResumeIds || [];
+      const sourceResumeIds = jobRecord?.sourceResumeIds || [];
       saveCustomizedResume({
-        basicInfo: resume.basicInfo,
+        basicInfo: activeResume.basicInfo,
         rawText: result.summary,
-        skills: resume.skills,
+        skills: activeResume.skills,
         experiences: result.experiences.map((item) => ({
           id: generateId(),
           company: item.company,
@@ -261,7 +375,7 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
         targetJob: {
           position: jd.position || '',
           company: jd.company,
-          matchScore: match?.score || 0,
+          matchScore: typeof match?.score === 'number' ? match.score : null,
           jobId: currentJobId || undefined,
         },
       });
@@ -269,14 +383,14 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
       // 更新收录的岗位
       if (currentJobId) {
         await saveJob({
-          ...initialJob,
+          ...jobRecord,
           id: currentJobId,
           jd,
           matchResult: match!,
-          savedAt: initialJob?.savedAt || new Date().toISOString(),
+          savedAt: jobRecord?.savedAt || new Date().toISOString(),
           status: 'completed',
           generatedResume: result,
-          resumeSnapshot: initialJob?.resumeSnapshot || resume,
+          resumeSnapshot: jobRecord?.resumeSnapshot || activeResume,
         });
         onJobSaved();
       }
@@ -499,10 +613,18 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
 
   // 匹配结果
   if (stage === 'result' && jd && match) {
+    const v2 = isMatchResultV2(match);
+    const groups = statusOrder.map(status => ({
+      key: status,
+      ...statusMeta[status],
+      className: status,
+      items: orderedMatchItems.filter(item => (item.status || (item.matched ? 'matched' : 'missing')) === status),
+    }));
     return (
       <div className="analysis-detail space-y-7 animate-fade-in">
         <div className="analysis-page-title"><p>JOB MATCH ANALYSIS</p><h1>岗位匹配分析</h1></div>
-        <AnalysisOverview match={match} jd={jd} items={uniqueMatchItems} selectedDimension={selectedDimension} onDimensionSelect={setSelectedDimension} onReanalyze={initialJob ? handleReanalyze : undefined} />
+        {jobRecord?.scoringVersion === 'radar-v2' && !v2 && <div className="analysis-data-warning" role="alert">这条新版历史数据不完整，系统已停止展示半成品分数。请点击“重新分析”生成完整结果，原记录会在成功后才被替换。</div>}
+        <AnalysisOverview match={match} jd={jd} items={uniqueMatchItems} selectedDimension={selectedDimension} onDimensionSelect={setSelectedDimension} onReanalyze={jobRecord ? handleReanalyze : undefined} />
         <section className="analysis-matches" aria-labelledby="detailed-analysis-title">
           <div className="analysis-section-heading">
             <div><h2 id="detailed-analysis-title">具体能力匹配分析</h2></div>
@@ -513,13 +635,9 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
               {(['all', ...Object.keys(dimensionLabels)] as (MatchDimensionKey | 'all')[]).map(key => <button type="button" key={key} aria-pressed={selectedDimension === key} onClick={() => setSelectedDimension(key)}>{key === 'all' ? '全部要求' : dimensionLabels[key]}<small>{uniqueMatchItems.filter(item => key === 'all' || itemDimension(item) === key).length}</small></button>)}
             </div> : <p>全部要求 · 切换雷达图维度不会改变下方内容</p>}
           </div>
-          {statusOrder.map(status => {
-            const items = orderedMatchItems.filter(item => (item.status || (item.matched ? 'matched' : 'missing')) === status);
-            const meta = statusMeta[status];
-            return <section key={status} className={`analysis-match-group analysis-${status}`}><div className="analysis-group-heading"><span>{meta.symbol}</span><h3>{meta.label}</h3><small>{items.length}</small><p>{meta.note}</p></div>
-              {items.length ? <div className="analysis-card-grid">{items.map(item => <MatchRequirementCard key={item.id || item.requirement} item={item} onSupplement={handleSelectGap} supplemented={supplementedGaps.has(item.requirement)} />)}</div> : <p className="analysis-empty">当前范围暂无{meta.label}的条目。</p>}
-            </section>;
-          })}
+          {groups.map(group => <section key={group.key} className={`analysis-match-group analysis-${group.className}`}><div className="analysis-group-heading"><span>{group.symbol}</span><h3>{group.label}</h3><small>{group.items.length}</small><p>{group.note}</p></div>
+            {group.items.length ? <div className="analysis-card-grid">{group.items.map(item => <MatchRequirementCard key={item.id || item.requirement} item={item} onSupplement={handleSelectGap} supplemented={supplementedGaps.has(item.requirement)} />)}</div> : <p className="analysis-empty">当前范围暂无{group.label}条目。</p>}
+          </section>)}
         </section>
 
         {/* 操作 */}
@@ -567,7 +685,7 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
 };
 
 interface OverviewProps {
-  match: MatchResult;
+  match: AnalysisMatchResult;
   jd: ParsedJobDescription;
   items: MatchItem[];
   selectedDimension: MatchDimensionKey | 'all';
@@ -576,7 +694,19 @@ interface OverviewProps {
 }
 
 const AnalysisOverview: React.FC<OverviewProps> = ({ match, jd, items, selectedDimension, onDimensionSelect, onReanalyze }) => {
-  const score = Math.max(0, Math.min(100, match.score));
+  const isV2 = isMatchResultV2(match);
+  const score = typeof match.score === 'number' ? Math.max(0, Math.min(100, match.score)) : null;
+  const advantages = isV2 ? match.capabilityRadar.advantages.map(item => item.title) : match.capabilityRadar?.advantages || [];
+  const keyGaps = isV2 ? match.capabilityRadar.keyGaps.map(item => item.title) : match.capabilityRadar?.keyGaps || [];
+  const rawSummary = match.summary?.trim();
+  const legacyTemplate = /^当前简历对可评分岗位要求的覆盖度为\s*(?:\d+(?:\.\d+)?|null)\s*分。?/;
+  const summary = isV2 && rawSummary?.match(legacyTemplate)
+    ? [
+      score === null ? '候选人当前缺少可评分要求，暂无法判断整体匹配度。' : score >= 75 ? '候选人整体匹配度较高，具备较好的岗位适配基础。' : score >= 50 ? '候选人与岗位存在一定匹配基础，但仍有需要补强的能力。' : '候选人与岗位的匹配度偏低，建议优先核对关键要求。',
+      advantages.length ? `具备${advantages.slice(0, 3).join('、')}等岗位相关能力。` : '',
+      rawSummary.replace(legacyTemplate, '').trim(),
+    ].filter(Boolean).join('')
+    : rawSummary || '暂无分析摘要';
   const title = jd.position || '未命名岗位';
   const titleParts = title.match(/^(.*?)\s*[（(]([^）)]+)[）)]$/);
   return <section className="analysis-overview" aria-label="岗位匹配概览">
@@ -584,12 +714,12 @@ const AnalysisOverview: React.FC<OverviewProps> = ({ match, jd, items, selectedD
       <p className="analysis-kicker">匹配结果 / MATCH OVERVIEW</p>
       <div className="analysis-job-top">
         <div><h2>{titleParts ? titleParts[1] : title}{titleParts && <span>{titleParts[2]}</span>}</h2><p className="analysis-company"><span aria-hidden="true">{jd.company?.slice(0, 1) || '企'}</span>投递公司 · {jd.company || '未注明公司'}{jd.city && ` · ${jd.city}`}</p></div>
-        <div className="analysis-score"><div className="analysis-score-ring" style={{ background: `conic-gradient(from -90deg, #c45a3c ${score}%, #f1ede7 ${score}% 100%)` }} role="img" aria-label={`匹配分数 ${match.score} 分，满分 100 分`}><div><strong>{match.score}</strong><small>/ 100</small></div></div><p>{score >= 75 ? '推荐投递' : score >= 50 ? '可以考虑' : '匹配度较低'}</p></div>
+        <div className="analysis-score">{score === null ? <div className="analysis-score-empty" role="status"><strong>—</strong><small>无可评分项</small></div> : <><div className="analysis-score-ring" style={{ background: `conic-gradient(from -90deg, #c45a3c ${score}%, #f1ede7 ${score}% 100%)` }} role="img" aria-label={`匹配分数 ${score} 分，满分 100 分`}><div><strong>{score}</strong><small>/ 100</small></div></div><p>{score >= 75 ? '推荐投递' : score >= 50 ? '可以考虑' : '匹配度较低'}</p></>}</div>
       </div>
-      <div className="analysis-summary-report"><h3><span aria-hidden="true">✧</span>综合分析摘要</h3><p>{match.summary || '暂无分析摘要'}</p></div>
+      <div className="analysis-summary-report"><h3><span aria-hidden="true">✧</span>综合分析摘要</h3><p>{summary}</p></div>
       <div className="analysis-pros-cons">
-        <div><h3><span aria-hidden="true">↗</span>主要优势</h3>{match.capabilityRadar?.advantages.length ? <ul>{match.capabilityRadar.advantages.map((text, index) => <li key={index}>{text}</li>)}</ul> : <p>暂无明确优势</p>}</div>
-        <div><h3><span aria-hidden="true">↘</span>主要差距</h3>{match.capabilityRadar?.keyGaps.length ? <ul>{match.capabilityRadar.keyGaps.map((text, index) => <li key={index}>{text}</li>)}</ul> : <p>暂无明确差距</p>}</div>
+        <div><h3><span aria-hidden="true">↗</span>主要优势</h3>{advantages.length ? <ul>{advantages.map((text, index) => <li key={index}>{text}</li>)}</ul> : <p>暂无明确优势</p>}</div>
+        <div><h3><span aria-hidden="true">↘</span>主要差距</h3>{keyGaps.length ? <ul>{keyGaps.map((text, index) => <li key={index}>{text}</li>)}</ul> : <p>暂无明确差距</p>}</div>
       </div>
       <p className="analysis-summary-note">ⓘ 分析依据当前简历与岗位要求；“未发现”表示简历缺少证据，不代表你不具备该能力。</p>
     </div>
@@ -597,22 +727,23 @@ const AnalysisOverview: React.FC<OverviewProps> = ({ match, jd, items, selectedD
   </section>;
 };
 
-const MatchRequirementCard: React.FC<{ item: MatchItem; onSupplement: (requirement: string) => void; supplemented: boolean }> = ({ item, onSupplement, supplemented }) => {
+const MatchRequirementCard: React.FC<{ item: AnalysisRequirementItem; onSupplement: (requirement: string) => void; supplemented: boolean }> = ({ item, onSupplement, supplemented }) => {
   const status = item.status || (item.matched ? 'matched' : 'missing');
-  const meta = statusMeta[status];
+  const hardMeta = item.isHard && item.hardConditionStatus ? hardStatusMeta[item.hardConditionStatus] : null;
+  const meta = hardMeta || statusMeta[status];
+  const visualStatus = hardMeta?.className || status;
   const requirement = item.requirement.trim() || item.jobEvidence?.trim() || '';
   const title = item.title?.trim();
-  // Ignore whitespace/punctuation differences when rejecting duplicated titles.
   const comparableText = (text: string) => text.normalize('NFKC').replace(/[\s\p{P}]/gu, '').toLowerCase();
   const showTitle = !!title && title.length <= 32
     && comparableText(title) !== comparableText(requirement)
     && comparableText(title) !== comparableText(item.jobEvidence || '');
-  return <article data-analysis-requirement={item.requirement} className={`analysis-match-card analysis-${status}`}>
+  return <article data-analysis-requirement={item.requirement} className={`analysis-match-card analysis-${visualStatus}`}>
     <div className="analysis-card-top">{showTitle ? <h4>{title}</h4> : <div className="analysis-card-label">岗位要求</div>}<span>{dimensionLabels[itemDimension(item)]}</span></div>
     {showTitle && <div className="analysis-card-label">岗位要求</div>}<p className="analysis-requirement">{requirement}</p>
-    <div className="analysis-evidence"><div className="analysis-card-label">简历证据</div><p>{item.evidence || '简历中未发现明确证据'}</p></div>
-    <div className="analysis-card-footer"><div className="analysis-tags"><span className="analysis-status-tag">{meta.symbol} {meta.label}</span><span className={item.isHard ? 'analysis-hard-tag' : 'analysis-soft-tag'}>{item.isHard ? '硬性条件' : '非硬性条件'}</span></div>
-      {status !== 'matched' ? <button type="button" disabled={supplemented} onClick={() => onSupplement(item.requirement)}>{supplemented ? '已补录 · 待重新分析' : '去补录 ↗'}</button> : <span className="analysis-source-note">证据已匹配</span>}
+    <div className="analysis-evidence"><div className="analysis-card-label">简历证据</div><p>{item.evidence ? compactEvidenceForDisplay(item.evidence, requirement) : '简历中未发现明确证据'}</p></div>
+    <div className="analysis-card-footer"><div className="analysis-tags"><span className="analysis-status-tag">{meta.symbol} {meta.label}</span><span className={item.isHard ? 'analysis-hard-tag' : 'analysis-soft-tag'}>{item.isHard ? '硬性条件' : '非硬性条件'}</span><span className="analysis-soft-tag">{item.isScoreable === false ? '不参与评分' : '参与评分'}</span></div>
+      {status !== 'matched' && item.isScoreable !== false ? <button type="button" disabled={supplemented} onClick={() => onSupplement(item.requirement)}>{supplemented ? '已补录并重评' : '去补录 ↗'}</button> : <span className="analysis-source-note">{item.isScoreable === false ? '仅作条件核查' : '证据已匹配'}</span>}
     </div>
   </article>;
 };

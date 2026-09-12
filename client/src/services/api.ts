@@ -1,7 +1,9 @@
 import type {
   ParsedResume,
   ParsedJobDescription,
+  AnalysisMatchResult,
   MatchResult,
+  MatchResultV2,
   GeneratedResume,
   AtomicExperience,
 } from '../types';
@@ -132,6 +134,19 @@ export async function analyzeMatch(
   return handleResponse<MatchResult>(res);
 }
 
+/** 调用 radar-v2 匹配入口。新分析和历史重评统一使用该入口。 */
+export async function analyzeMatchV2(
+  resume: ParsedResume,
+  jobDescription: ParsedJobDescription
+): Promise<MatchResultV2> {
+  const res = await fetch(`${BASE_URL}/analyze-match-v2`, {
+    method: 'POST',
+    headers: buildHeaders(),
+    body: JSON.stringify({ resume, jobDescription }),
+  });
+  return handleResponse<MatchResultV2>(res);
+}
+
 /**
  * 生成补录引导问题
  */
@@ -169,7 +184,7 @@ export async function formatFollowUpExperience(
 export async function generateTailoredResume(
   resume: ParsedResume,
   jobDescription: ParsedJobDescription,
-  matchResult?: MatchResult
+  matchResult?: AnalysisMatchResult
 ): Promise<GeneratedResume> {
   const res = await fetch(`${BASE_URL}/generate-resume`, {
     method: 'POST',

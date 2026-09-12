@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "nodemon --exec ts-node src/index.ts",
     "build": "tsc",
+    "test:scoring": "ts-node src/services/capabilityScoring.test.ts && ts-node src/services/capabilityScoring.baseline.test.ts && ts-node src/services/capabilityScoringV2.test.ts",
+    "test:match-v2": "ts-node src/services/deepseekClient.test.ts && ts-node src/services/matchAnalysisV2.test.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {

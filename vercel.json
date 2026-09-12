@@ -41,6 +41,10 @@
       "destination": "/api/match"
     },
     {
+      "source": "/api/ai/analyze-match-v2",
+      "destination": "/api/match-v2"
+    },
+    {
       "source": "/api/ai/followup/question",
       "destination": "/api/supplement"
     },

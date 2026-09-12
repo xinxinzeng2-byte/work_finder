@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ParsedJobDescription, ParsedResume } from '../../types';
-import { analyzeMatch, parseJobDescription, parseResumeFile, parseResumeText, readFileAsDataUrl } from '../../services/api';
+import { analyzeMatchV2, parseJobDescription, parseResumeFile, parseResumeText, readFileAsDataUrl } from '../../services/api';
 import { Loading } from '../Loading';
 import WorkflowProgressBar, { type WorkflowStep } from '../WorkflowProgressBar';
 import { clearWorkflowDraft, generateId, getNextSequenceNumber, hasApiKey, loadResumes, loadWorkflowDraft, mergeExperiencesFromResumes, mergeSkillsFromResumes, saveJob, saveResume, saveWorkflowDraft, updateResumeData, type ResumeItem, type SavedJob } from '../../utils/storage';
@@ -159,7 +159,7 @@ export const JobsWorkflowView: React.FC<Props> = ({ onJobsChange, onComplete, on
     setLoading(true);
     setError('');
     try {
-      const result = await analyzeMatch(merged, parsedJd);
+      const result = await analyzeMatchV2(merged, parsedJd);
       const now = new Date().toISOString();
       const job: SavedJob = {
         id: generateId(),
@@ -168,13 +168,17 @@ export const JobsWorkflowView: React.FC<Props> = ({ onJobsChange, onComplete, on
         jobName: parsedJd.position || '未命名岗位',
         company: parsedJd.company || '未知公司',
         intendedPosition: intendedPosition || parsedJd.position || '未命名职位',
-        matchScore: result.score,
+        matchScore: result.score ?? undefined,
         mainGaps: result.gaps.slice(0, 3).map((gap) => gap.requirement),
         analyzedAt: now,
         status: 'analyzed',
         jd: parsedJd,
         matchResult: result,
         sourceResumeIds: sourceResumes.map((item) => item.id),
+        analyzedResumeId: sourceResumes.length === 1 ? sourceResumes[0].id : undefined,
+        analyzedResumeVersion: sourceResumes.length === 1 ? sourceResumes[0].version : undefined,
+        scoringVersion: result.metadata.scoringVersion,
+        inputHash: result.metadata.inputHash,
         resumeSnapshot: merged,
         createdAt: now,
         updatedAt: now,

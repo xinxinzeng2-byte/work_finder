@@ -1,0 +1,8 @@
+ALTER TABLE resumes
+  ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+
+ALTER TABLE jobs
+  ADD COLUMN IF NOT EXISTS analyzed_resume_id UUID,
+  ADD COLUMN IF NOT EXISTS analyzed_resume_version INTEGER,
+  ADD COLUMN IF NOT EXISTS scoring_version TEXT,
+  ADD COLUMN IF NOT EXISTS input_hash TEXT;

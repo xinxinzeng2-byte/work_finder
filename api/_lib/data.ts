@@ -51,6 +51,7 @@ export function mapResume(row: Record<string, unknown>) {
     isCurrent: row.is_current,
     sourceIds: stringArrayValue(row.source_ids),
     targetJob: row.target_job || undefined,
+    version: row.version || 1,
     uploadedAt: row.uploaded_at,
   };
 }
@@ -70,6 +71,10 @@ export function mapJob(row: Record<string, unknown>) {
     generatedResume: row.generated_resume || undefined,
     supplementedGaps: stringArrayValue(row.supplemented_gaps),
     sourceResumeIds: stringArrayValue(row.source_resume_ids),
+    analyzedResumeId: row.analyzed_resume_id || undefined,
+    analyzedResumeVersion: row.analyzed_resume_version || undefined,
+    scoringVersion: row.scoring_version || undefined,
+    inputHash: row.input_hash || undefined,
     savedAt: row.saved_at,
     analyzedAt: row.analyzed_at || undefined,
     createdAt: row.created_at,

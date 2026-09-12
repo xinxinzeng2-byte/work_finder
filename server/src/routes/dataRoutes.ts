@@ -22,6 +22,7 @@ function mapResume(row: Record<string, any>) {
     isCurrent: row.is_current,
     sourceIds: row.source_ids || [],
     targetJob: row.target_job || undefined,
+    version: row.version || 1,
     uploadedAt: row.uploaded_at,
   };
 }
@@ -41,6 +42,10 @@ function mapJob(row: Record<string, any>) {
     generatedResume: row.generated_resume || undefined,
     supplementedGaps: row.supplemented_gaps || [],
     sourceResumeIds: row.source_resume_ids || [],
+    analyzedResumeId: row.analyzed_resume_id || undefined,
+    analyzedResumeVersion: row.analyzed_resume_version || undefined,
+    scoringVersion: row.scoring_version || undefined,
+    inputHash: row.input_hash || undefined,
     savedAt: row.saved_at,
     analyzedAt: row.analyzed_at || undefined,
     createdAt: row.created_at,
@@ -109,18 +114,19 @@ router.post('/resumes', async (req, res) => {
       isCurrent: body.isCurrent === true,
       sourceIds: jsonText(Array.isArray(body.sourceIds) ? body.sourceIds : []),
       targetJob: jsonText(body.targetJob),
+      version: typeof body.version === 'number' && body.version >= 1 ? Math.floor(body.version) : 1,
     };
     const rows = id
       ? await sql`
-        INSERT INTO resumes (id, user_id, name, type, resume, original_text, file_name, file_data, file_mime, is_current, source_ids, target_job)
-        VALUES (${id}, ${userId}, ${values.name}, ${values.type}, ${values.resume}::jsonb, ${values.originalText}, ${values.fileName}, ${values.fileData}, ${values.fileMime}, ${values.isCurrent}, ${values.sourceIds}::jsonb, ${values.targetJob}::jsonb)
-        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, resume = EXCLUDED.resume, original_text = EXCLUDED.original_text, file_name = EXCLUDED.file_name, file_data = EXCLUDED.file_data, file_mime = EXCLUDED.file_mime, is_current = EXCLUDED.is_current, source_ids = EXCLUDED.source_ids, target_job = EXCLUDED.target_job
+        INSERT INTO resumes (id, user_id, name, type, resume, original_text, file_name, file_data, file_mime, is_current, source_ids, target_job, version)
+        VALUES (${id}, ${userId}, ${values.name}, ${values.type}, ${values.resume}::jsonb, ${values.originalText}, ${values.fileName}, ${values.fileData}, ${values.fileMime}, ${values.isCurrent}, ${values.sourceIds}::jsonb, ${values.targetJob}::jsonb, ${values.version})
+        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, resume = EXCLUDED.resume, original_text = EXCLUDED.original_text, file_name = EXCLUDED.file_name, file_data = EXCLUDED.file_data, file_mime = EXCLUDED.file_mime, is_current = EXCLUDED.is_current, source_ids = EXCLUDED.source_ids, target_job = EXCLUDED.target_job, version = EXCLUDED.version
         WHERE resumes.user_id = ${userId}
         RETURNING *
       `
       : await sql`
-        INSERT INTO resumes (user_id, name, type, resume, original_text, file_name, file_data, file_mime, is_current, source_ids, target_job)
-        VALUES (${userId}, ${values.name}, ${values.type}, ${values.resume}::jsonb, ${values.originalText}, ${values.fileName}, ${values.fileData}, ${values.fileMime}, ${values.isCurrent}, ${values.sourceIds}::jsonb, ${values.targetJob}::jsonb)
+        INSERT INTO resumes (user_id, name, type, resume, original_text, file_name, file_data, file_mime, is_current, source_ids, target_job, version)
+        VALUES (${userId}, ${values.name}, ${values.type}, ${values.resume}::jsonb, ${values.originalText}, ${values.fileName}, ${values.fileData}, ${values.fileMime}, ${values.isCurrent}, ${values.sourceIds}::jsonb, ${values.targetJob}::jsonb, ${values.version})
         RETURNING *
       `;
     res.status(201).json({ resume: mapResume(rows[0]) });
@@ -145,6 +151,7 @@ router.patch('/resumes/:id', async (req, res) => {
       UPDATE resumes SET
         name = COALESCE(${typeof body.name === 'string' ? body.name.trim() : null}, name),
         resume = COALESCE(${jsonText(body.resume)}::jsonb, resume),
+        version = COALESCE(${typeof body.version === 'number' && body.version >= 1 ? Math.floor(body.version) : null}, version),
         is_current = COALESCE(${typeof body.isCurrent === 'boolean' ? body.isCurrent : null}, is_current)
       WHERE id = ${id} AND user_id = ${userId}
       RETURNING *
@@ -212,20 +219,24 @@ router.post('/jobs', async (req, res) => {
       generatedResume: jsonText(body.generatedResume),
       supplementedGaps: jsonText(Array.isArray(body.supplementedGaps) ? body.supplementedGaps : []),
       sourceResumeIds: jsonText(Array.isArray(body.sourceResumeIds) ? body.sourceResumeIds : []),
+      analyzedResumeId: typeof body.analyzedResumeId === 'string' && uuidPattern.test(body.analyzedResumeId) ? body.analyzedResumeId : null,
+      analyzedResumeVersion: typeof body.analyzedResumeVersion === 'number' ? Math.floor(body.analyzedResumeVersion) : null,
+      scoringVersion: typeof body.scoringVersion === 'string' ? body.scoringVersion : null,
+      inputHash: typeof body.inputHash === 'string' ? body.inputHash : null,
       savedAt: typeof body.savedAt === 'string' ? body.savedAt : null,
       analyzedAt: typeof body.analyzedAt === 'string' ? body.analyzedAt : null,
     };
     const rows = id
       ? await sql`
-        INSERT INTO jobs (id, user_id, sequence_number, job_name, company, intended_position, match_score, status, jd, match_result, resume_snapshot, generated_resume, supplemented_gaps, source_resume_ids, saved_at, analyzed_at)
-        VALUES (${id}, ${userId}, ${values.sequenceNumber}, ${values.jobName}, ${values.company}, ${values.intendedPosition}, ${values.matchScore}, ${values.status}, ${values.jd}::jsonb, ${values.matchResult}::jsonb, ${values.resumeSnapshot}::jsonb, ${values.generatedResume}::jsonb, ${values.supplementedGaps}::jsonb, ${values.sourceResumeIds}::jsonb, COALESCE(${values.savedAt}::timestamptz, now()), ${values.analyzedAt}::timestamptz)
-        ON CONFLICT (id) DO UPDATE SET sequence_number = EXCLUDED.sequence_number, job_name = EXCLUDED.job_name, company = EXCLUDED.company, intended_position = EXCLUDED.intended_position, match_score = EXCLUDED.match_score, status = EXCLUDED.status, jd = EXCLUDED.jd, match_result = EXCLUDED.match_result, resume_snapshot = EXCLUDED.resume_snapshot, generated_resume = EXCLUDED.generated_resume, supplemented_gaps = EXCLUDED.supplemented_gaps, source_resume_ids = EXCLUDED.source_resume_ids, saved_at = EXCLUDED.saved_at, analyzed_at = EXCLUDED.analyzed_at, updated_at = now()
+        INSERT INTO jobs (id, user_id, sequence_number, job_name, company, intended_position, match_score, status, jd, match_result, resume_snapshot, generated_resume, supplemented_gaps, source_resume_ids, analyzed_resume_id, analyzed_resume_version, scoring_version, input_hash, saved_at, analyzed_at)
+        VALUES (${id}, ${userId}, ${values.sequenceNumber}, ${values.jobName}, ${values.company}, ${values.intendedPosition}, ${values.matchScore}, ${values.status}, ${values.jd}::jsonb, ${values.matchResult}::jsonb, ${values.resumeSnapshot}::jsonb, ${values.generatedResume}::jsonb, ${values.supplementedGaps}::jsonb, ${values.sourceResumeIds}::jsonb, ${values.analyzedResumeId}, ${values.analyzedResumeVersion}, ${values.scoringVersion}, ${values.inputHash}, COALESCE(${values.savedAt}::timestamptz, now()), ${values.analyzedAt}::timestamptz)
+        ON CONFLICT (id) DO UPDATE SET sequence_number = EXCLUDED.sequence_number, job_name = EXCLUDED.job_name, company = EXCLUDED.company, intended_position = EXCLUDED.intended_position, match_score = EXCLUDED.match_score, status = EXCLUDED.status, jd = EXCLUDED.jd, match_result = EXCLUDED.match_result, resume_snapshot = EXCLUDED.resume_snapshot, generated_resume = EXCLUDED.generated_resume, supplemented_gaps = EXCLUDED.supplemented_gaps, source_resume_ids = EXCLUDED.source_resume_ids, analyzed_resume_id = EXCLUDED.analyzed_resume_id, analyzed_resume_version = EXCLUDED.analyzed_resume_version, scoring_version = EXCLUDED.scoring_version, input_hash = EXCLUDED.input_hash, saved_at = EXCLUDED.saved_at, analyzed_at = EXCLUDED.analyzed_at, updated_at = now()
         WHERE jobs.user_id = ${userId}
         RETURNING *
       `
       : await sql`
-        INSERT INTO jobs (user_id, sequence_number, job_name, company, intended_position, match_score, status, jd, match_result, resume_snapshot, generated_resume, supplemented_gaps, source_resume_ids, saved_at, analyzed_at)
-        VALUES (${userId}, ${values.sequenceNumber}, ${values.jobName}, ${values.company}, ${values.intendedPosition}, ${values.matchScore}, ${values.status}, ${values.jd}::jsonb, ${values.matchResult}::jsonb, ${values.resumeSnapshot}::jsonb, ${values.generatedResume}::jsonb, ${values.supplementedGaps}::jsonb, ${values.sourceResumeIds}::jsonb, COALESCE(${values.savedAt}::timestamptz, now()), ${values.analyzedAt}::timestamptz)
+        INSERT INTO jobs (user_id, sequence_number, job_name, company, intended_position, match_score, status, jd, match_result, resume_snapshot, generated_resume, supplemented_gaps, source_resume_ids, analyzed_resume_id, analyzed_resume_version, scoring_version, input_hash, saved_at, analyzed_at)
+        VALUES (${userId}, ${values.sequenceNumber}, ${values.jobName}, ${values.company}, ${values.intendedPosition}, ${values.matchScore}, ${values.status}, ${values.jd}::jsonb, ${values.matchResult}::jsonb, ${values.resumeSnapshot}::jsonb, ${values.generatedResume}::jsonb, ${values.supplementedGaps}::jsonb, ${values.sourceResumeIds}::jsonb, ${values.analyzedResumeId}, ${values.analyzedResumeVersion}, ${values.scoringVersion}, ${values.inputHash}, COALESCE(${values.savedAt}::timestamptz, now()), ${values.analyzedAt}::timestamptz)
         RETURNING *
       `;
     res.status(201).json({ job: mapJob(rows[0]) });
@@ -257,6 +268,10 @@ router.patch('/jobs/:id', async (req, res) => {
         generated_resume = COALESCE(${jsonText(body.generatedResume)}::jsonb, generated_resume),
         supplemented_gaps = COALESCE(${jsonText(body.supplementedGaps)}::jsonb, supplemented_gaps),
         source_resume_ids = COALESCE(${jsonText(body.sourceResumeIds)}::jsonb, source_resume_ids),
+        analyzed_resume_id = COALESCE(${typeof body.analyzedResumeId === 'string' && uuidPattern.test(body.analyzedResumeId) ? body.analyzedResumeId : null}::uuid, analyzed_resume_id),
+        analyzed_resume_version = COALESCE(${typeof body.analyzedResumeVersion === 'number' ? Math.floor(body.analyzedResumeVersion) : null}, analyzed_resume_version),
+        scoring_version = COALESCE(${typeof body.scoringVersion === 'string' ? body.scoringVersion : null}, scoring_version),
+        input_hash = COALESCE(${typeof body.inputHash === 'string' ? body.inputHash : null}, input_hash),
         updated_at = now()
       WHERE id = ${id} AND user_id = ${userId}
       RETURNING *

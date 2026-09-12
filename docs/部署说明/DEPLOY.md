@@ -4,6 +4,7 @@
 
 1. 注册 [Vercel 账号](https://vercel.com)（用 GitHub 登录最快）
 2. 把项目推送到 GitHub 仓库
+3. 部署包含阶段 4 的历史重评和补录重评时，先在 Neon 执行 `db/migrations/20260912_add_analysis_versions.sql`
 
 ## 部署步骤
 
