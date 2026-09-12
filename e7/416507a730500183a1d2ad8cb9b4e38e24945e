@@ -1,0 +1,86 @@
+server/src/services/deepseekClient.ts
+  s_7a5c4a713bc6d8::t_2a33aff881f505 1-99
+vercel.json
+  s_7a5c4a713bc6d8::t_2a33aff881f505 44-46
+  s_7a5c4a713bc6d8::t_d6c64965dfe16f 43
+server/package.json
+  s_7a5c4a713bc6d8::t_2a33aff881f505 9-10
+server/src/services/fixtures/jobMatchingGoldenFixtures.ts
+  s_7a5c4a713bc6d8::t_2a33aff881f505 1-333
+server/src/services/capabilityScoring.baseline.test.ts
+  s_7a5c4a713bc6d8::t_2a33aff881f505 1-67
+server/src/types/index.ts
+  s_7a5c4a713bc6d8::t_2a33aff881f505 96,135-257
+  s_7a5c4a713bc6d8::t_9c14f8f509f7e8 258
+server/src/controllers/matchControllerV2.ts
+  s_7a5c4a713bc6d8::t_2a33aff881f505 1-33
+server/src/services/capabilityScoringV2.ts
+  s_7a5c4a713bc6d8::t_ff0b8dac7c3d30 29-30
+  s_7a5c4a713bc6d8::t_b4367a5ce2804f 26-28
+  s_7a5c4a713bc6d8::t_24c33ac3356906 31-33
+server/src/services/capabilityScoringV2.test.ts
+  s_7a5c4a713bc6d8::t_44297b140a03e8 77
+  s_7a5c4a713bc6d8::t_a86602a8dadcaf 64
+  s_7a5c4a713bc6d8::t_3ed2d27be9a674 200
+  s_7a5c4a713bc6d8::t_6c3ed46901167d 103-104
+  s_7a5c4a713bc6d8::t_f7644480bbedec 61-63
+  s_7a5c4a713bc6d8::t_55b0bb0b62d419 65-67,74-76
+  s_7a5c4a713bc6d8::t_36f4661f6d3098 78-80,100-102
+  s_7a5c4a713bc6d8::t_4cd96c7811a5f1 105-107,197-199
+  s_7a5c4a713bc6d8::t_eb13043c830cb7 201-203
+docs/开发文档/开发计划/JOB_MATCHING_REFACTOR_PLAN.md
+  s_7a5c4a713bc6d8::t_2a33aff881f505 1-992
+api/match-v2.ts
+  s_7a5c4a713bc6d8::t_2a33aff881f505 1-20
+client/src/types/index.ts
+  s_7a5c4a713bc6d8::t_2a33aff881f505 115-240,251
+  s_7a5c4a713bc6d8::t_b2c9e3e2d77082 250
+  s_7a5c4a713bc6d8::t_40169458ff03df 252-254
+server/src/routes/aiRoutes.ts
+  s_7a5c4a713bc6d8::t_2a33aff881f505 12,25,27
+server/src/services/matchAnalysisV2.test.ts
+  s_7a5c4a713bc6d8::t_2a33aff881f505 1-232
+server/src/services/matchAnalysisV2.ts
+  s_7a5c4a713bc6d8::t_2a33aff881f505 1-588
+server/src/services/deepseekClient.test.ts
+  s_7a5c4a713bc6d8::t_2a33aff881f505 1-57
+docs/开发文档/架构设计/CAPABILITY_RADAR_SCORING.md
+  s_7a5c4a713bc6d8::t_2a33aff881f505 1-9,13,15-19,22-126,128,130,132-136,138,140-143,145,147-150,152,154-156,165-167,173-176,178,183-185,187-191,195-200,202,204-246,249-251,254,256-261,263-270,273-276,279,281,283-285,287,290-292,295,297,300,303,305-319,321,324,327,329,331,333,335,337-353,356-357,360-374,376,378-385,387,389,391,393,395-410,414-443
+client/src/components/SettingsModal.tsx
+  s_7a5c4a713bc6d8::t_63e01dde2fa5a6 2,6-76
+  s_7a5c4a713bc6d8::t_2a33aff881f505 4-5,91,102-103,150-221,225,253,270-373
+  s_7a5c4a713bc6d8::t_c42ba0e866264f 92-94,104-105
+  s_7a5c4a713bc6d8::t_967d954faed5a5 106-108
+  s_7a5c4a713bc6d8::t_38e7b8ae725e6b 374
+client/src/services/api.ts
+  s_7a5c4a713bc6d8::t_2a33aff881f505 6,137-147
+  s_7a5c4a713bc6d8::t_4264fd797b8f34 148-149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "e7416507a730500183a1d2ad8cb9b4e38e24945e",
+  "prompts": {},
+  "sessions": {
+    "s_7a5c4a713bc6d8": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a8c423f61d24a32b343150d",
+        "model": "Doubao-Seed-Evolving__dev"
+      },
+      "human_author": "xinxinzeng2-byte <xinxinzeng2@gmail.com>",
+      "custom_attributes": {
+        "client_type": "ide",
+        "edit_kind": "file_edit",
+        "external_session_id": "6a8c423f61d24a32b343150d",
+        "display_model_name": "Doubao-Seed-Evolving",
+        "operation_id": "6aa375c1843e87890c99fde7",
+        "session_id": "6a8c423f61d24a32b343150d",
+        "tool_name": "Edit",
+        "tool_use_id": "6aa375c1843e87890c99fde7",
+        "source_scene": "agent",
+        "runtime_client": "trae-tob-git-ai"
+      }
+    }
+  }
+}
