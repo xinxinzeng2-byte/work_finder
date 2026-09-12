@@ -45,6 +45,15 @@ interface AnalysisRequirementItem extends MatchItem {
   scoreDetail?: CapabilityRequirementScoreV2;
 }
 
+/** 判断选中的简历是否就是这条岗位上次实际分析使用的版本。 */
+export const isSameAnalyzedResume = (item: ResumeItem, job: SavedJob): boolean => {
+  if (job.analyzedResumeId) {
+    return item.id === job.analyzedResumeId
+      && (typeof job.analyzedResumeVersion !== 'number' || item.version === job.analyzedResumeVersion);
+  }
+  return !!job.resumeSnapshot && JSON.stringify(item.resume) === JSON.stringify(job.resumeSnapshot);
+};
+
 interface Props {
   resume: ParsedResume | null;
   onResumeUpdate?: (resume: ParsedResume) => void;
@@ -64,6 +73,10 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
   const [generated, setGenerated] = useState<GeneratedResume | null>(initialJob?.generatedResume || null);
   const [currentJobId, setCurrentJobId] = useState<string | null>(initialJob?.id || null);
   const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
+  const [showResumePicker, setShowResumePicker] = useState(false);
+  const [resumePickerItems, setResumePickerItems] = useState<ResumeItem[]>([]);
+  const [resumePickerSelection, setResumePickerSelection] = useState('');
 
   // 补录相关
   const [selectedGap, setSelectedGap] = useState<string | null>(null);
@@ -192,13 +205,28 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
     }
   };
 
-  const handleReanalyze = async () => {
+  const openResumePicker = () => {
+    if (!jobRecord || !jd) return;
+    const items = loadResumes();
+    if (items.length === 0) {
+      setError('当前没有可重新分析的简历，请先在“简历与能力库”中导入简历。');
+      return;
+    }
+    const currentAnalysis = items.find(item => isSameAnalyzedResume(item, jobRecord));
+    setResumePickerItems(items);
+    setResumePickerSelection(currentAnalysis?.id || getCurrentResumeItem()?.id || items[0].id);
+    setError('');
+    setInfo('');
+    setShowResumePicker(true);
+  };
+
+  const handleReanalyze = async (selectedResume?: ResumeItem) => {
     if (!jobRecord || !jd) return;
     const resumes = loadResumes();
-    let resumeItem = jobRecord.analyzedResumeId ? resumes.find(item => item.id === jobRecord.analyzedResumeId && item.type === 'original') : undefined;
+    let resumeItem = selectedResume || (jobRecord.analyzedResumeId ? resumes.find(item => item.id === jobRecord.analyzedResumeId) : undefined);
     let analysisResume = resumeItem?.resume || (!jobRecord.analyzedResumeId ? jobRecord.resumeSnapshot : undefined);
     if (jobRecord.analyzedResumeId && !resumeItem) {
-      const current = getCurrentResumeItem();
+      const current = getCurrentResumeItem() || resumes[0];
       if (!current) {
         setError('原分析使用的简历已不存在，当前也没有可用简历。原结果已保留。');
         return;
@@ -214,6 +242,14 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
     }
 
     setError('');
+    setInfo('');
+    setShowResumePicker(false);
+    if (resumeItem && isSameAnalyzedResume(resumeItem, jobRecord)) {
+      setActiveResume(analysisResume);
+      setInfo('已选择本条岗位原来使用的简历，直接复用已有分析结果，未重复调用 AI。');
+      setStage('result');
+      return;
+    }
     setStage('analyzing');
     try {
       const matchResult = await analyzeMatchV2(analysisResume, jd);
@@ -427,6 +463,8 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
     setGenerated(null);
     setStage('idle');
     setError('');
+    setInfo('');
+    setShowResumePicker(false);
     setSelectedGap(null);
     setSupplementedGaps(new Set());
   };
@@ -624,7 +662,7 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
       <div className="analysis-detail space-y-7 animate-fade-in">
         <div className="analysis-page-title"><p>JOB MATCH ANALYSIS</p><h1>岗位匹配分析</h1></div>
         {jobRecord?.scoringVersion === 'radar-v2' && !v2 && <div className="analysis-data-warning" role="alert">这条新版历史数据不完整，系统已停止展示半成品分数。请点击“重新分析”生成完整结果，原记录会在成功后才被替换。</div>}
-        <AnalysisOverview match={match} jd={jd} items={uniqueMatchItems} selectedDimension={selectedDimension} onDimensionSelect={setSelectedDimension} onReanalyze={jobRecord ? handleReanalyze : undefined} />
+        <AnalysisOverview match={match} jd={jd} items={uniqueMatchItems} selectedDimension={selectedDimension} onDimensionSelect={setSelectedDimension} onReanalyze={jobRecord ? openResumePicker : undefined} />
         <section className="analysis-matches" aria-labelledby="detailed-analysis-title">
           <div className="analysis-section-heading">
             <div><h2 id="detailed-analysis-title">具体能力匹配分析</h2></div>
@@ -651,6 +689,23 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
             {error}
           </div>
         )}
+        {info && (
+          <div className="p-3 rounded-[6px] border border-moss/30 bg-mossLight text-sm text-moss">
+            {info}
+          </div>
+        )}
+        <ResumePickerModal
+          open={showResumePicker}
+          items={resumePickerItems}
+          currentJob={jobRecord}
+          selectedId={resumePickerSelection}
+          onSelect={setResumePickerSelection}
+          onClose={() => setShowResumePicker(false)}
+          onConfirm={() => {
+            const selected = resumePickerItems.find(item => item.id === resumePickerSelection);
+            if (selected) void handleReanalyze(selected);
+          }}
+        />
       </div>
     );
   }
@@ -682,6 +737,61 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
       </button>
     </div>
   );
+};
+
+interface ResumePickerModalProps {
+  open: boolean;
+  items: ResumeItem[];
+  currentJob: SavedJob | null;
+  selectedId: string;
+  onSelect: (id: string) => void;
+  onClose: () => void;
+  onConfirm: () => void;
+}
+
+const ResumePickerModal: React.FC<ResumePickerModalProps> = ({ open, items, currentJob, selectedId, onSelect, onClose, onConfirm }) => {
+  if (!open) return null;
+  return <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal max-w-2xl animate-scale-in" onClick={event => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="reanalyze-resume-picker-title">
+      <div className="flex items-start justify-between border-b border-line p-6">
+        <div>
+          <p className="eyebrow">RESUME SELECTION</p>
+          <h2 id="reanalyze-resume-picker-title" className="mt-2 font-serif text-xl font-semibold">选择用于重新分析的简历</h2>
+          <p className="mt-2 text-sm text-ink-secondary">相同简历版本会直接复用已有结果；选择其他简历才会重新调用 AI。</p>
+        </div>
+        <button type="button" onClick={onClose} className="btn-ghost -m-2 h-8 w-8 p-0 text-lg" aria-label="关闭重新分析简历选择">×</button>
+      </div>
+      <div className="max-h-[55vh] space-y-3 overflow-y-auto p-6">
+        {items.map(item => {
+          const selected = item.id === selectedId;
+          return <button
+            type="button"
+            key={item.id}
+            onClick={() => onSelect(item.id)}
+            aria-pressed={selected}
+            className={`w-full rounded-lg border p-4 text-left transition ${selected ? 'border-terra bg-terra-light' : 'border-line bg-paper hover:border-terra/60'}`}
+          >
+            <div className="flex items-start gap-3">
+              <span className={`mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-terra bg-terra text-white' : 'border-ink-weak'}`} aria-hidden="true">{selected ? '✓' : ''}</span>
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-2">
+                  <strong className="truncate text-sm text-ink">{item.name}</strong>
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] ${item.type === 'customized' ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'}`}>{item.type === 'customized' ? '定制简历' : '原始简历'}</span>
+                  {currentJob && isSameAnalyzedResume(item, currentJob) && <span className="rounded-full bg-mossLight px-2 py-0.5 text-[11px] text-moss">本岗位当前使用</span>}
+                  {item.isCurrent && item.type === 'original' && <span className="rounded-full bg-terra-light px-2 py-0.5 text-[11px] text-terra">默认简历</span>}
+                </span>
+                <span className="mt-1 block text-xs text-ink-secondary">版本 {item.version} · {item.resume.skills.length} 项能力 · {item.resume.experiences.length} 段经历 · {new Date(item.uploadedAt).toLocaleDateString('zh-CN')}</span>
+              </span>
+            </div>
+          </button>;
+        })}
+      </div>
+      <div className="flex justify-end gap-3 border-t border-line p-6">
+        <button type="button" onClick={onClose} className="btn-ghost">取消</button>
+        <button type="button" onClick={onConfirm} disabled={!selectedId} className="btn-primary">使用此简历</button>
+      </div>
+    </div>
+  </div>;
 };
 
 interface OverviewProps {

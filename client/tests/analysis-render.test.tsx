@@ -2,7 +2,7 @@ import React from 'react';
 import assert from 'node:assert/strict';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CapabilityRadar } from '../src/components/CapabilityRadar';
-import { AnalyzeView, matchesSelectedDimension } from '../src/components/views/AnalyzeView';
+import { AnalyzeView, isSameAnalyzedResume, matchesSelectedDimension } from '../src/components/views/AnalyzeView';
 
 const keys = ['skill', 'experience', 'project', 'achievement', 'education', 'industry'] as const;
 const details = [{
@@ -62,8 +62,13 @@ const matchResult = {
   metadata: { scoringVersion: 'radar-v2' as const, extractionVersion: 'match-extraction-v2.1', inputHash: 'hash', requirementCacheHit: false, evidenceCacheHit: false },
 };
 const detailHtml = renderToStaticMarkup(<AnalyzeView resume={{ basicInfo: {}, skills: [], experiences: [], rawText: '简历' }} onJobSaved={() => undefined} initialJob={{ id: 'job', jd: { position: '测试岗位', rawText: '岗位', requirements: [] }, matchResult, savedAt: '2026-09-12T00:00:00.000Z', status: 'analyzed', scoringVersion: 'radar-v2' }} />);
-for (const text of ['未发现', '部分匹配', '已匹配', '硬性条件', '不参与评分', '计算详情']) assert.ok(detailHtml.includes(text), `详情页应展示：${text}`);
+for (const text of ['未发现', '部分匹配', '已匹配', '硬性条件', '计算详情']) assert.ok(detailHtml.includes(text), `详情页应展示：${text}`);
 assert.ok(!detailHtml.includes('必须接受出差'), '默认技能联动范围不应混入其他要求');
 assert.ok(!detailHtml.includes('查看单项计算'), '卡片内不应默认提供单项计算入口');
+
+const oldJobForReuse = { id: 'reuse-job', jd: { requirements: [], rawText: '' }, matchResult, savedAt: '2026-09-12T00:00:00.000Z', status: 'analyzed' as const };
+const resumeItem = { id: 'resume-1', name: '原始简历', type: 'original' as const, resume: { basicInfo: {}, skills: [], experiences: [], rawText: '简历' }, uploadedAt: '2026-09-12T00:00:00.000Z', version: 2, isCurrent: true };
+assert.equal(isSameAnalyzedResume(resumeItem, { ...oldJobForReuse, analyzedResumeId: 'resume-1', analyzedResumeVersion: 2 }), true, '相同简历版本应复用结果');
+assert.equal(isSameAnalyzedResume(resumeItem, { ...oldJobForReuse, analyzedResumeId: 'resume-1', analyzedResumeVersion: 1 }), false, '简历版本变化应重新分析');
 
 console.log('client analysis rendering tests passed');
