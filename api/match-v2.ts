@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { executeMatchV2 } from '../server/src/controllers/matchControllerV2';
-import { matchAnalysisErrorResponse } from '../server/src/services/matchAnalysisV2';
+import type { ParsedJobDescription, ParsedResume } from '../server/src/types';
+import { analyzeMatchV2, matchAnalysisErrorResponse } from '../server/src/services/matchAnalysisV2';
 import { resolveApiKey } from './_lib/apiKey';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -11,7 +11,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const apiKey = await resolveApiKey(req);
-    const result = await executeMatchV2(apiKey, req.body);
+    const source = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? req.body as Record<string, unknown>
+      : {};
+    const result = await analyzeMatchV2(
+      apiKey,
+      source.resume as ParsedResume,
+      source.jobDescription as ParsedJobDescription,
+    );
     res.json(result);
   } catch (error) {
     const failure = matchAnalysisErrorResponse(error);
