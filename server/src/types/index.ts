@@ -93,6 +93,7 @@ export type MatchDimensionKey = CapabilityDimensionKey | 'other';
 export type CapabilityImportance = 'core' | 'important' | 'normal' | 'bonus';
 export type CapabilityRequiredDepth = 'basic' | 'familiar' | 'practical' | 'expert';
 export type CapabilityEvidenceLevel = 'none' | 'mentioned' | 'used' | 'owned' | 'achieved';
+export type CapabilityEvidenceLevelV2 = 'none' | 'mentioned' | 'used' | 'owned';
 export type CapabilityRelevance = 'none' | 'weak' | 'partial' | 'high' | 'exact';
 export type CapabilityMatchStatus = 'matched' | 'partial' | 'missing' | 'not_required';
 
@@ -129,6 +130,130 @@ export interface CapabilityRadarResult {
   dimensions: CapabilityDimension[];
   advantages: string[];
   keyGaps: string[];
+}
+
+export type CapabilityHardConditionStatus = 'met' | 'not_met' | 'unknown' | 'not_applicable';
+export type CapabilityRelevanceV2 = 'none' | 'weak' | 'partial' | 'high';
+export type CapabilityBackgroundRequirementV2 = 'preferred' | 'required';
+export type CapabilityBackgroundMatchV2 = 'none' | 'unrelated' | 'related';
+export type CapabilityRequirementStatusV2 = 'matched' | 'partial' | 'missing_evidence';
+export type CapabilityDimensionStatusV2 = CapabilityRequirementStatusV2 | 'core_gap' | 'not_required';
+
+export interface CapabilityEvidenceItemV2 {
+  id: string;
+  title?: string;
+  requirement: string;
+  dimension: MatchDimensionKey;
+  isHard: boolean;
+  isScoreable: boolean;
+  hardConditionStatus?: CapabilityHardConditionStatus;
+  importance?: CapabilityImportance;
+  requiredDepth?: CapabilityRequiredDepth;
+  backgroundRequirement?: CapabilityBackgroundRequirementV2;
+  jobEvidence: string;
+  resumeEvidenceLevel?: CapabilityEvidenceLevelV2;
+  relevance?: CapabilityRelevanceV2;
+  backgroundMatch?: CapabilityBackgroundMatchV2;
+  resumeEvidenceSourceIds?: string[];
+  resumeEvidence?: string;
+}
+
+export interface CapabilityRequirementScoreV2 {
+  id: string;
+  title?: string;
+  requirement: string;
+  dimension: CapabilityDimensionKey;
+  isHard: boolean;
+  isScoreable: true;
+  importance: CapabilityImportance;
+  importanceValue: number;
+  scoringMethod: 'evidence_relevance' | 'background_match';
+  requiredDepth?: CapabilityRequiredDepth;
+  backgroundRequirement?: CapabilityBackgroundRequirementV2;
+  requiredDepthScore: number;
+  resumeEvidenceLevel: CapabilityEvidenceLevelV2;
+  evidenceLevelScore: number;
+  relevance?: CapabilityRelevanceV2;
+  relevanceFactor: number;
+  backgroundMatch?: CapabilityBackgroundMatchV2;
+  resumeEvidenceScore: number;
+  coverageScore: number;
+  weightedCoverage: number;
+  scoreContribution: number;
+  status: CapabilityRequirementStatusV2;
+  jobEvidence: string;
+  resumeEvidence?: string;
+}
+
+export interface CapabilityRankedRequirementV2 {
+  id: string;
+  title: string;
+  dimension: CapabilityDimensionKey;
+  impact: number;
+}
+
+export interface CapabilityDimensionV2 {
+  key: CapabilityDimensionKey;
+  label: string;
+  jobScore: number;
+  resumeScore: number;
+  matchScore: number | null;
+  requirementCount: number;
+  scoreableCount: number;
+  importanceTotal: number;
+  exactWeight: number;
+  displayWeight: number;
+  contribution: number;
+  status: CapabilityDimensionStatusV2;
+  hasCoreGap: boolean;
+  matchedCount: number;
+  partialCount: number;
+  missingCount: number;
+  details: CapabilityRequirementScoreV2[];
+}
+
+export interface CapabilityRadarResultV2 {
+  scoringVersion: 'radar-v2';
+  score: number | null;
+  totalImportance: number;
+  dimensions: CapabilityDimensionV2[];
+  advantages: CapabilityRankedRequirementV2[];
+  keyGaps: CapabilityRankedRequirementV2[];
+  validationWarnings: string[];
+}
+
+export interface StandardizedJobRequirementV2 {
+  id: string;
+  sourceIds: string[];
+  title: string;
+  requirement: string;
+  dimension: MatchDimensionKey;
+  isHard: boolean;
+  isScoreable: boolean;
+  importance?: CapabilityImportance;
+  requiredDepth?: CapabilityRequiredDepth;
+  backgroundRequirement?: CapabilityBackgroundRequirementV2;
+  jobEvidence: string;
+}
+
+export interface MatchAnalysisMetadataV2 {
+  scoringVersion: 'radar-v2';
+  extractionVersion: string;
+  inputHash: string;
+  requirementCacheHit: boolean;
+  evidenceCacheHit: boolean;
+}
+
+export interface MatchResultV2 {
+  score: number | null;
+  hardConditionCheck: MatchItem[];
+  skillMatch: MatchItem[];
+  gaps: MatchItem[];
+  summary: string;
+  capabilityRadar: CapabilityRadarResultV2;
+  capabilityEvidence: CapabilityEvidenceItemV2[];
+  standardizedRequirements: StandardizedJobRequirementV2[];
+  metadata: MatchAnalysisMetadataV2;
 }
 
 // 匹配分析结果

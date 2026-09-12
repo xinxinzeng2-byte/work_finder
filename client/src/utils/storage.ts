@@ -1,8 +1,13 @@
 import type {
+  AnalysisMatchResult,
   AtomicExperience,
   AtomicSkill,
+  CapabilityDimensionKey,
+  CapabilityEvidenceItemV2,
+  CapabilityRequirementScoreV2,
   GeneratedResume,
   MatchResult,
+  MatchResultV2,
   MatchDimensionKey,
   ParsedJobDescription,
   ParsedResume,
@@ -155,6 +160,7 @@ function normalizeMatchItems(value: unknown): MatchResult['gaps'] {
 
 function normalizeCapabilityRadar(value: unknown): MatchResult['capabilityRadar'] {
   const source = asRecord(value);
+  if (source.scoringVersion === 'radar-v2') return undefined;
   if (!Array.isArray(source.dimensions)) return undefined;
   const validKeys = ['skill', 'experience', 'project', 'achievement', 'education', 'industry'];
   const validStatuses = ['matched', 'partial', 'missing', 'not_required'];
@@ -195,14 +201,104 @@ function normalizeCapabilityRadar(value: unknown): MatchResult['capabilityRadar'
   };
 }
 
-function normalizeMatchResult(value: unknown): MatchResult {
+function normalizeCapabilityRadarV2(value: unknown): MatchResultV2['capabilityRadar'] | undefined {
   const source = asRecord(value);
+  if (source.scoringVersion !== 'radar-v2' || !Array.isArray(source.dimensions)) return undefined;
+  const validKeys: CapabilityDimensionKey[] = ['skill', 'experience', 'project', 'achievement', 'education', 'industry'];
+  const validDimensionStatuses = ['matched', 'partial', 'missing_evidence', 'core_gap', 'not_required'] as const;
+  const validRequirementStatuses = ['matched', 'partial', 'missing_evidence'] as const;
+  const dimensions = source.dimensions.flatMap((value) => {
+    const dimension = asRecord(value);
+    if (!validKeys.includes(dimension.key as CapabilityDimensionKey)
+      || !validDimensionStatuses.includes(dimension.status as typeof validDimensionStatuses[number])) return [];
+    const rawDetails = Array.isArray(dimension.details) ? dimension.details : [];
+    const details = rawDetails.flatMap((value): CapabilityRequirementScoreV2[] => {
+      const detail = asRecord(value);
+      if (typeof detail.id !== 'string' || typeof detail.requirement !== 'string'
+        || !validKeys.includes(detail.dimension as CapabilityDimensionKey)
+        || !validRequirementStatuses.includes(detail.status as typeof validRequirementStatuses[number])
+        || typeof detail.importanceValue !== 'number' || typeof detail.requiredDepthScore !== 'number'
+        || typeof detail.evidenceLevelScore !== 'number' || typeof detail.relevanceFactor !== 'number'
+        || typeof detail.resumeEvidenceScore !== 'number' || typeof detail.coverageScore !== 'number'
+        || typeof detail.weightedCoverage !== 'number' || typeof detail.scoreContribution !== 'number') return [];
+      return [detail as unknown as CapabilityRequirementScoreV2];
+    });
+    if (details.length !== rawDetails.length) return [];
+    const numericFields = ['jobScore', 'resumeScore', 'requirementCount', 'scoreableCount', 'importanceTotal', 'exactWeight', 'displayWeight', 'contribution', 'matchedCount', 'partialCount', 'missingCount'];
+    if (numericFields.some((field) => typeof dimension[field] !== 'number')) return [];
+    return [{ ...dimension, details } as unknown as MatchResultV2['capabilityRadar']['dimensions'][number]];
+  });
+  if (dimensions.length !== 6 || new Set(dimensions.map((item) => item.key)).size !== 6) return undefined;
+  const normalizeRanked = (input: unknown): MatchResultV2['capabilityRadar']['advantages'] => Array.isArray(input) ? input.flatMap((value) => {
+    const item = asRecord(value);
+    if (typeof item.id !== 'string' || typeof item.title !== 'string' || !validKeys.includes(item.dimension as CapabilityDimensionKey) || typeof item.impact !== 'number') return [];
+    return [item as unknown as MatchResultV2['capabilityRadar']['advantages'][number]];
+  }) : [];
   return {
-    score: typeof source.score === 'number' ? source.score : 0,
+    scoringVersion: 'radar-v2',
+    score: typeof source.score === 'number' ? source.score : null,
+    totalImportance: typeof source.totalImportance === 'number' ? source.totalImportance : 0,
+    dimensions,
+    advantages: normalizeRanked(source.advantages),
+    keyGaps: normalizeRanked(source.keyGaps),
+    validationWarnings: normalizeStringArray(source.validationWarnings),
+  };
+}
+
+function normalizeEvidenceV2(value: unknown): CapabilityEvidenceItemV2[] {
+  return Array.isArray(value) ? value.flatMap((entry) => {
+    const item = asRecord(entry);
+    if (typeof item.id !== 'string' || typeof item.requirement !== 'string' || typeof item.jobEvidence !== 'string'
+      || typeof item.dimension !== 'string' || typeof item.isHard !== 'boolean' || typeof item.isScoreable !== 'boolean') return [];
+    return [item as unknown as CapabilityEvidenceItemV2];
+  }) : [];
+}
+
+export function normalizeMatchResult(value: unknown): AnalysisMatchResult {
+  const source = asRecord(value);
+  const metadata = asRecord(source.metadata);
+  if (metadata.scoringVersion === 'radar-v2') {
+    const capabilityRadar = normalizeCapabilityRadarV2(source.capabilityRadar);
+    const rawEvidence = Array.isArray(source.capabilityEvidence) ? source.capabilityEvidence : null;
+    const rawRequirements = Array.isArray(source.standardizedRequirements) ? source.standardizedRequirements : null;
+    const capabilityEvidence = normalizeEvidenceV2(rawEvidence);
+    const scoredIds = new Set(capabilityRadar?.dimensions.flatMap((dimension) => dimension.details.map((detail) => detail.id)) || []);
+    const evidenceIds = new Set(capabilityEvidence.map((item) => item.id));
+    const completeV2 = capabilityRadar
+      && rawEvidence !== null
+      && capabilityEvidence.length === rawEvidence.length
+      && rawRequirements !== null
+      && typeof metadata.extractionVersion === 'string' && metadata.extractionVersion.length > 0
+      && typeof metadata.inputHash === 'string' && metadata.inputHash.length > 0
+      && (typeof source.score === 'number' || source.score === null)
+      && source.score === capabilityRadar.score
+      && [...scoredIds].every((id) => evidenceIds.has(id));
+    if (completeV2) {
+      return {
+        score: source.score as number | null,
+        hardConditionCheck: normalizeMatchItems(source.hardConditionCheck),
+        skillMatch: normalizeMatchItems(source.skillMatch),
+        gaps: normalizeMatchItems(source.gaps),
+        summary: typeof source.summary === 'string' ? source.summary : '',
+        capabilityRadar,
+        capabilityEvidence,
+        standardizedRequirements: rawRequirements as MatchResultV2['standardizedRequirements'],
+        metadata: {
+          scoringVersion: 'radar-v2',
+          extractionVersion: typeof metadata.extractionVersion === 'string' ? metadata.extractionVersion : '',
+          inputHash: typeof metadata.inputHash === 'string' ? metadata.inputHash : '',
+          requirementCacheHit: metadata.requirementCacheHit === true,
+          evidenceCacheHit: metadata.evidenceCacheHit === true,
+        },
+      };
+    }
+  }
+  return {
+    score: metadata.scoringVersion === 'radar-v2' ? null : typeof source.score === 'number' ? source.score : 0,
     hardConditionCheck: normalizeMatchItems(source.hardConditionCheck),
     skillMatch: normalizeMatchItems(source.skillMatch),
     gaps: normalizeMatchItems(source.gaps),
-    summary: typeof source.summary === 'string' ? source.summary : '',
+    summary: metadata.scoringVersion === 'radar-v2' ? '这条 radar-v2 历史数据不完整，已停止展示半成品分数，请重新分析。' : typeof source.summary === 'string' ? source.summary : '',
     capabilityRadar: normalizeCapabilityRadar(source.capabilityRadar),
   };
 }
@@ -371,7 +467,7 @@ function syncResume(item: ResumeItem): Promise<unknown> {
 
 function patchResume(item: ResumeItem): Promise<unknown> {
   const updates: Promise<unknown>[] = [
-    request(`/data/resumes/${item.id}`, { method: 'PATCH', body: JSON.stringify({ resume: item.resume }) }),
+    request(`/data/resumes/${item.id}`, { method: 'PATCH', body: JSON.stringify({ resume: item.resume, version: item.version }) }),
     request(`/data/resumes/${item.id}`, { method: 'PATCH', body: JSON.stringify({ name: item.name }) }),
   ];
   if (item.isCurrent) updates.push(request(`/data/resumes/${item.id}`, { method: 'PATCH', body: JSON.stringify({ isCurrent: true }) }));
@@ -388,7 +484,7 @@ export type ResumeType = 'original' | 'customized';
 export interface TargetJobInfo {
   position: string;
   company?: string;
-  matchScore: number;
+  matchScore: number | null;
   jobId?: string;
 }
 
@@ -400,6 +496,7 @@ export interface ResumeItem {
   originalText?: string;
   fileName?: string;
   uploadedAt: string;
+  version: number;
   isCurrent: boolean;
   sourceIds?: string[];
   sourceId?: string;
@@ -423,6 +520,7 @@ function normalizeResumeItem(value: unknown): ResumeItem {
     originalText,
     fileName: typeof item.fileName === 'string' ? item.fileName : undefined,
     uploadedAt: typeof item.uploadedAt === 'string' ? item.uploadedAt : new Date(0).toISOString(),
+    version: typeof item.version === 'number' && item.version >= 1 ? Math.floor(item.version) : 1,
     isCurrent: item.isCurrent === true,
     sourceIds: normalizeStringArray(item.sourceIds),
     sourceId: typeof item.sourceId === 'string' ? item.sourceId : undefined,
@@ -431,7 +529,7 @@ function normalizeResumeItem(value: unknown): ResumeItem {
     targetJob: item.targetJob && typeof item.targetJob === 'object' ? {
       position: typeof targetJob.position === 'string' ? targetJob.position : '',
       company: typeof targetJob.company === 'string' ? targetJob.company : undefined,
-      matchScore: typeof targetJob.matchScore === 'number' ? targetJob.matchScore : 0,
+      matchScore: typeof targetJob.matchScore === 'number' ? targetJob.matchScore : null,
       jobId: typeof targetJob.jobId === 'string' ? targetJob.jobId : undefined,
     } : undefined,
   };
@@ -459,6 +557,7 @@ export function loadResumes(): ResumeItem[] {
       type: 'original',
       resume,
       uploadedAt: new Date().toISOString(),
+      version: 1,
       isCurrent: true,
     };
     localStorage.setItem(KEYS.RESUMES, JSON.stringify([item]));
@@ -484,6 +583,7 @@ export function saveResume(
     sourceFileData: options?.sourceFileData,
     sourceMimeType: options?.sourceMimeType,
     uploadedAt: new Date().toISOString(),
+    version: 1,
     isCurrent: true,
   };
   resumes.forEach((r) => (r.isCurrent = false));
@@ -517,6 +617,7 @@ export function saveCustomizedResume(
     sourceIds: options.sourceIds,
     sourceId: options.sourceIds.join(','),
     uploadedAt: new Date().toISOString(),
+    version: 1,
     isCurrent: false,
     targetJob: options.targetJob,
   };
@@ -545,6 +646,7 @@ export function updateCurrentResume(resume: ParsedResume): void {
     return;
   }
   current.resume = resume;
+  current.version += 1;
   localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
   localStorage.setItem(KEYS.CURRENT_RESUME_ID, current.id);
   localStorage.setItem(KEYS.RESUME, JSON.stringify(resume));
@@ -552,11 +654,12 @@ export function updateCurrentResume(resume: ParsedResume): void {
 }
 
 /** 更新指定原始简历的结构化结果，用于历史数据重新提取后的回写。 */
-export function updateResumeData(id: string, resume: ParsedResume): void {
+export function updateResumeData(id: string, resume: ParsedResume): ResumeItem | undefined {
   const resumes = loadResumes();
   const item = resumes.find((candidate) => candidate.id === id);
-  if (!item) return;
+  if (!item) return undefined;
   item.resume = resume;
+  item.version += 1;
   localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
   if (item.isCurrent || localStorage.getItem(KEYS.CURRENT_RESUME_ID) === id) {
     localStorage.setItem(KEYS.CURRENT_RESUME_ID, id);
@@ -566,6 +669,29 @@ export function updateResumeData(id: string, resume: ParsedResume): void {
     // 新记录使用 UUID；兼容尚未完成迁移的旧本地 ID 时重新 POST，避免 PATCH 直接被 400 拒绝。
     enqueueCloudWrite(`resume:${id}`, () => isUuid(id) ? patchResume(item) : syncResume(item));
   }
+  return item;
+}
+
+/** 补录流程使用：云端成功后再替换本地简历，并返回新版本。 */
+export async function replaceResumeData(id: string, resume: ParsedResume): Promise<ResumeItem> {
+  const resumes = loadResumes();
+  const index = resumes.findIndex((item) => item.id === id && item.type === 'original');
+  if (index < 0) throw new Error('要更新的原始简历不存在');
+  const item: ResumeItem = { ...resumes[index], resume, version: resumes[index].version + 1 };
+  if (shouldSync()) await enqueueCloudWrite(`resume:${item.id}`, () => syncResume(item));
+  resumes[index] = item;
+  localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
+  if (item.isCurrent || localStorage.getItem(KEYS.CURRENT_RESUME_ID) === id) {
+    localStorage.setItem(KEYS.CURRENT_RESUME_ID, id);
+    localStorage.setItem(KEYS.RESUME, JSON.stringify(resume));
+  }
+  return item;
+}
+
+export function getCurrentResumeItem(): ResumeItem | undefined {
+  const id = localStorage.getItem(KEYS.CURRENT_RESUME_ID);
+  const resumes = loadResumes();
+  return resumes.find((item) => item.id === id && item.type === 'original') || resumes.find((item) => item.type === 'original');
 }
 
 export function setCurrentResume(id: string): void {
@@ -810,7 +936,7 @@ export async function saveApiKeyToCloud(key: string): Promise<void> {
 export interface SavedJob {
   id: string;
   jd: ParsedJobDescription;
-  matchResult: MatchResult;
+  matchResult: AnalysisMatchResult;
   savedAt: string;
   status: 'analyzed' | 'supplementing' | 'generating' | 'completed' | 'generated';
   generatedResume?: GeneratedResume;
@@ -818,22 +944,29 @@ export interface SavedJob {
   jobName?: string;
   company?: string;
   intendedPosition?: string;
-  matchScore?: number;
+  matchScore?: number | null;
   mainGaps?: string[];
   analyzedAt?: string;
   createdAt?: string;
   updatedAt?: string;
   sourceResumeIds?: string[];
+  analyzedResumeId?: string;
+  analyzedResumeVersion?: number;
+  scoringVersion?: string;
+  inputHash?: string;
   resumeSnapshot?: ParsedResume;
   supplementedGaps?: string[];
 }
 
-function normalizeSavedJob(value: unknown): SavedJob {
+export function normalizeSavedJob(value: unknown): SavedJob {
   const job = asRecord(value);
+  const matchResult = normalizeMatchResult(job.matchResult);
+  const matchMetadata = asRecord(asRecord(job.matchResult).metadata);
+  const sourceResumeIds = normalizeStringArray(job.sourceResumeIds);
   return {
     id: typeof job.id === 'string' ? job.id : generateId(),
     jd: normalizeParsedJobDescription(job.jd),
-    matchResult: normalizeMatchResult(job.matchResult),
+    matchResult,
     savedAt: typeof job.savedAt === 'string' ? job.savedAt : new Date(0).toISOString(),
     status: ['analyzed', 'supplementing', 'generating', 'completed', 'generated'].includes(String(job.status)) ? job.status as SavedJob['status'] : 'analyzed',
     generatedResume: job.generatedResume && typeof job.generatedResume === 'object' ? job.generatedResume as GeneratedResume : undefined,
@@ -841,12 +974,16 @@ function normalizeSavedJob(value: unknown): SavedJob {
     jobName: typeof job.jobName === 'string' ? job.jobName : undefined,
     company: typeof job.company === 'string' ? job.company : undefined,
     intendedPosition: typeof job.intendedPosition === 'string' ? job.intendedPosition : undefined,
-    matchScore: typeof job.matchScore === 'number' ? job.matchScore : undefined,
+    matchScore: typeof job.matchScore === 'number' ? job.matchScore : job.matchScore === null ? null : undefined,
     mainGaps: normalizeStringArray(job.mainGaps),
     analyzedAt: typeof job.analyzedAt === 'string' ? job.analyzedAt : undefined,
     createdAt: typeof job.createdAt === 'string' ? job.createdAt : undefined,
     updatedAt: typeof job.updatedAt === 'string' ? job.updatedAt : undefined,
-    sourceResumeIds: normalizeStringArray(job.sourceResumeIds),
+    sourceResumeIds,
+    analyzedResumeId: typeof job.analyzedResumeId === 'string' ? job.analyzedResumeId : sourceResumeIds.length === 1 ? sourceResumeIds[0] : undefined,
+    analyzedResumeVersion: typeof job.analyzedResumeVersion === 'number' ? job.analyzedResumeVersion : undefined,
+    scoringVersion: typeof job.scoringVersion === 'string' ? job.scoringVersion : typeof matchMetadata.scoringVersion === 'string' ? matchMetadata.scoringVersion : undefined,
+    inputHash: typeof job.inputHash === 'string' ? job.inputHash : typeof matchMetadata.inputHash === 'string' ? matchMetadata.inputHash : undefined,
     resumeSnapshot: job.resumeSnapshot && typeof job.resumeSnapshot === 'object' ? normalizeParsedResume(job.resumeSnapshot) : undefined,
     supplementedGaps: normalizeStringArray(job.supplementedGaps),
   };
@@ -881,6 +1018,16 @@ export function saveJob(job: SavedJob): Promise<void> {
   else jobs.push(job);
   localStorage.setItem(KEYS.SAVED_JOBS, JSON.stringify(jobs));
   return shouldSync() ? enqueueCloudWrite(`job:${job.id}`, () => syncJob(job)) : Promise.resolve();
+}
+
+/** 重评时先确认云端完整写入，再原子替换本地记录；失败时保留原分析。 */
+export async function replaceJobAnalysis(job: SavedJob): Promise<void> {
+  if (shouldSync()) await enqueueCloudWrite(`job:${job.id}`, () => syncJob(job));
+  const jobs = loadSavedJobs();
+  const index = jobs.findIndex((item) => item.id === job.id);
+  if (index >= 0) jobs[index] = job;
+  else jobs.push(job);
+  localStorage.setItem(KEYS.SAVED_JOBS, JSON.stringify(jobs));
 }
 
 export function updateJob(id: string, updates: Partial<SavedJob>): void {

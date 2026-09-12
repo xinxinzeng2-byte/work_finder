@@ -9,6 +9,7 @@ import {
   handleFormatFollowUpExperience,
   handleGenerateResume,
 } from '../controllers/aiController';
+import { handleAnalyzeMatchV2 } from '../controllers/matchControllerV2';
 
 const router = Router();
 
@@ -21,8 +22,9 @@ router.post('/parse-resume', upload.single('file'), handleParseResume);
 // 解析岗位描述
 router.post('/parse-jd', handleParseJobDescription);
 
-// 匹配分析
+// 现有页面继续使用 radar-v1；radar-v2 通过独立入口验收。
 router.post('/analyze-match', handleAnalyzeMatch);
+router.post('/analyze-match-v2', handleAnalyzeMatchV2);
 
 // 补录引导 - 生成引导问题
 router.post('/followup/question', handleGenerateFollowUpQuestion);

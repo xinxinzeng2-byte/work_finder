@@ -23,8 +23,10 @@ CREATE TABLE IF NOT EXISTS resumes (
   is_current BOOLEAN NOT NULL DEFAULT false,
   source_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
   target_job JSONB,
+  version INTEGER NOT NULL DEFAULT 1,
   uploaded_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE resumes ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
 CREATE INDEX IF NOT EXISTS idx_resumes_user ON resumes(user_id, uploaded_at DESC);
 
 CREATE TABLE IF NOT EXISTS jobs (
@@ -42,11 +44,19 @@ CREATE TABLE IF NOT EXISTS jobs (
   generated_resume JSONB,
   supplemented_gaps JSONB NOT NULL DEFAULT '[]'::jsonb,
   source_resume_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+  analyzed_resume_id UUID,
+  analyzed_resume_version INTEGER,
+  scoring_version TEXT,
+  input_hash TEXT,
   saved_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   analyzed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS analyzed_resume_id UUID;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS analyzed_resume_version INTEGER;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS scoring_version TEXT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS input_hash TEXT;
 CREATE INDEX IF NOT EXISTS idx_jobs_user ON jobs(user_id, saved_at DESC);
 
 CREATE TABLE IF NOT EXISTS workflow_drafts (
