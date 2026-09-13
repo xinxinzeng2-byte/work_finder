@@ -1,5 +1,49 @@
 # 更新日志
 
+## v1.0.0 新增我的求职准备与在线求职主页（2026-09-13）
+
+### 产品功能
+
+- **新增求职准备导航与两种创建流程**
+  - 摘要：保留“我的岗位投递”和“简历与能力库”，新增“我的求职准备”；支持从完整岗位分析快照创建针对岗位项目，或按求职方向与已有/新上传 PDF 简历创建通用主页；通用主页上传不改写默认简历，不完整 radar-v2 记录需重新分析。
+  - 涉及文件：`client/package.json`、`client/package-lock.json`、`client/src/main.tsx`、`client/src/App.tsx`、`client/src/components/Sidebar.tsx`、`client/src/components/views/AnalyzeView.tsx`、`client/src/components/views/PreparationsView.tsx`、`client/src/components/views/NewPreparationView.tsx`、`client/src/services/api.ts`、`client/src/services/preparations.ts`、`client/src/types/index.ts`、`client/src/utils/storage.ts`
+
+- **新增结构化主页编辑、局部完善与四套主题**
+  - 摘要：实现个人定位、优势、项目、经历、技能、教育和联系区块的结构化编辑、排序、隐藏与实时预览；差距建议和局部优化只生成带内容哈希的差异提案，用户确认后才应用，并可选同步真实事实到能力库；提供清爽专业、产品主页、创意作品集和企业科技四套响应式主题。
+  - 涉及文件：`client/src/components/views/PreparationEditorView.tsx`、`client/src/components/views/PreparationPreviewView.tsx`、`client/src/components/PortfolioRenderer.tsx`、`client/src/components/portfolio.css`、`client/src/index.css`、`client/src/services/preparations.ts`、`server/src/services/deepseekService.ts`、`server/src/types/index.ts`
+
+- **新增公开发布快照与私人面试准备**
+  - 摘要：求职主页可使用稳定随机链接免登录分享，草稿变更需手动更新发布，下线后统一返回 404；公开快照只保留用户授权的联系方式和主页内容，不读取岗位分析、内部来源或面试数据；面试准备独立生成五类问题，支持收藏、答题笔记和生成依据过期提醒。
+  - 涉及文件：`client/src/components/views/PublicPortfolioView.tsx`、`client/src/components/views/InterviewPreparationView.tsx`、`client/src/components/PortfolioRenderer.tsx`、`client/src/services/preparations.ts`、`api/preparation-ai.ts`、`api/public/[slug].ts`、`server/src/controllers/aiController.ts`、`server/src/routes/aiRoutes.ts`、`server/src/routes/publicRoutes.ts`、`server/src/index.ts`、`server/src/services/deepseekService.ts`、`vercel.json`
+
+- **新增求职准备、面试套件、发布快照和刷新会话存储**
+  - 摘要：新增求职准备草稿、面试套件、公开发布快照和刷新会话数据表，保留岗位与简历快照并在源记录删除后继续可用；Express 和 Vercel 共享数据契约，支持修订号并发控制、发布、下线和免登录读取。
+  - 涉及文件：`db/schema.sql`、`db/migrations/20260913_add_job_preparations.sql`、`api/_lib/data.ts`、`api/data/[...path].ts`、`server/src/routes/dataRoutes.ts`
+
+### 安全修复
+
+- **增加滚动刷新会话与公开数据隔离**
+  - 摘要：访问令牌调整为 15 分钟，通过 HttpOnly、SameSite=Lax 刷新 Cookie 滚动续期 30 天并限制单次会话最长 90 天；客户端合并并发 401 刷新并恢复原私有路由，公开主页完全绕过登录恢复；发布时过滤未授权联系方式和内部来源，并限制外链协议、文档结构与内容长度。
+  - 涉及文件：`api/_lib/auth.ts`、`api/auth/[action].ts`、`api/data/[...path].ts`、`api/preparation-ai.ts`、`client/src/services/http.ts`、`client/src/services/api.ts`、`client/src/App.tsx`、`server/src/services/authService.ts`、`server/src/routes/authRoutes.ts`、`server/src/controllers/aiController.ts`、`server/src/services/portfolioValidation.ts`
+
+### 修复与质量
+
+- **增加草稿自动保存、本地恢复与冲突保护**
+  - 摘要：编辑内容立即写入按账号和项目隔离的本地恢复缓存，停止输入 800ms 后写入云端；使用 revision 防止静默覆盖，冲突时可选云端或本机版本，AI、预览、面试与发布操作会等待草稿保存，退出登录前也会刷新待写入内容。
+  - 涉及文件：`client/src/components/views/PreparationEditorView.tsx`、`client/src/services/preparations.ts`、`client/src/App.tsx`、`api/data/[...path].ts`、`server/src/routes/dataRoutes.ts`
+
+### 测试与文档
+
+- **补充求职主页渲染、数据校验与部署说明**
+  - 摘要：增加四套主题、隐藏区块、私密联系方式、本地草稿修订和服务端 Portfolio/面试数据校验测试，并补充上线前必须执行的数据库迁移说明。
+  - 涉及文件：`client/tests/preparations.test.tsx`、`client/tests/run-storage-tests.mjs`、`server/src/services/portfolioValidation.test.ts`、`server/package.json`、`docs/部署说明/DEPLOY.md`
+
+### 文档与规范
+
+- **记录本次 GitHub 提交范围**
+  - 摘要：按项目唯一更新日志格式记录求职准备、在线主页、面试准备、登录会话、安全校验、测试和部署说明的交付边界，不包含依赖目录、构建产物或本地环境文件。
+  - 涉及文件：`CHANGELOG.md`
+
 ## 岗位分析支持切换简历与结果复用（2026-09-12）
 
 ### 产品功能

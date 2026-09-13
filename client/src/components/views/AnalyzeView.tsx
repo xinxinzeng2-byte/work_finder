@@ -59,11 +59,12 @@ interface Props {
   onResumeUpdate?: (resume: ParsedResume) => void;
   onJobSaved: () => void;
   initialJob?: SavedJob | null;
+  onCreatePreparation?: (jobId: string) => void;
 }
 
 type Stage = 'idle' | 'parsing-jd' | 'analyzing' | 'result' | 'supplementing' | 'generating' | 'done';
 
-export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSaved, initialJob }) => {
+export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSaved, initialJob, onCreatePreparation }) => {
   const [jdText, setJdText] = useState(initialJob?.jd.rawText || '');
   const [stage, setStage] = useState<Stage>(initialJob ? 'result' : 'idle');
   const [jd, setJd] = useState<ParsedJobDescription | null>(initialJob?.jd || null);
@@ -681,7 +682,7 @@ export const AnalyzeView: React.FC<Props> = ({ resume, onResumeUpdate, onJobSave
         {/* 操作 */}
         <div className="flex gap-3">
           <button onClick={handleReset} className="btn-ghost flex-1">分析新岗位</button>
-          <button onClick={handleGenerate} className="btn-primary flex-1">生成定制简历</button>
+          <button onClick={() => onCreatePreparation?.(currentJobId || jobRecord?.id || '')} disabled={!onCreatePreparation} className="btn-primary flex-1">创建求职准备</button>
         </div>
 
         {error && (

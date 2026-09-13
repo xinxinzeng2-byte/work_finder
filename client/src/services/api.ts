@@ -8,6 +8,7 @@ import type {
   AtomicExperience,
 } from '../types';
 import { getApiKey, isCloudApiKeyMode } from '../utils/storage';
+import { authFetch } from './http';
 
 // 本地由 Vite 代理到 Express，部署时由 vercel.json 映射到 Serverless Function。
 const BASE_URL = '/api/ai';
@@ -47,7 +48,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
  * 测试 API Key
  */
 export async function testApiKey(): Promise<boolean> {
-  const res = await fetch(`${BASE_URL}/test-key`, {
+  const res = await authFetch(`${BASE_URL}/test-key`, {
     method: 'POST',
     headers: buildHeaders(),
   });
@@ -64,7 +65,7 @@ export async function parseResumeFile(file: File): Promise<ParsedResume> {
     const reader = new FileReader();
     reader.onload = async () => {
       try {
-        const res = await fetch(`${BASE_URL}/parse-resume`, {
+        const res = await authFetch(`${BASE_URL}/parse-resume`, {
           method: 'POST',
           headers: buildHeaders(),
           body: JSON.stringify({
@@ -99,7 +100,7 @@ export function readFileAsDataUrl(file: File): Promise<string> {
  * 解析简历（文本输入）
  */
 export async function parseResumeText(text: string): Promise<ParsedResume> {
-  const res = await fetch(`${BASE_URL}/parse-resume`, {
+  const res = await authFetch(`${BASE_URL}/parse-resume`, {
     method: 'POST',
     headers: buildHeaders(),
     body: JSON.stringify({ text }),
@@ -111,7 +112,7 @@ export async function parseResumeText(text: string): Promise<ParsedResume> {
  * 解析岗位描述
  */
 export async function parseJobDescription(jdText: string): Promise<ParsedJobDescription> {
-  const res = await fetch(`${BASE_URL}/parse-jd`, {
+  const res = await authFetch(`${BASE_URL}/parse-jd`, {
     method: 'POST',
     headers: buildHeaders(),
     body: JSON.stringify({ jdText }),
@@ -126,7 +127,7 @@ export async function analyzeMatch(
   resume: ParsedResume,
   jobDescription: ParsedJobDescription
 ): Promise<MatchResult> {
-  const res = await fetch(`${BASE_URL}/analyze-match`, {
+  const res = await authFetch(`${BASE_URL}/analyze-match`, {
     method: 'POST',
     headers: buildHeaders(),
     body: JSON.stringify({ resume, jobDescription }),
@@ -139,7 +140,7 @@ export async function analyzeMatchV2(
   resume: ParsedResume,
   jobDescription: ParsedJobDescription
 ): Promise<MatchResultV2> {
-  const res = await fetch(`${BASE_URL}/analyze-match-v2`, {
+  const res = await authFetch(`${BASE_URL}/analyze-match-v2`, {
     method: 'POST',
     headers: buildHeaders(),
     body: JSON.stringify({ resume, jobDescription }),
@@ -154,7 +155,7 @@ export async function generateFollowUpQuestion(
   gap: string,
   resume: ParsedResume
 ): Promise<string> {
-  const res = await fetch(`${BASE_URL}/followup/question`, {
+  const res = await authFetch(`${BASE_URL}/followup/question`, {
     method: 'POST',
     headers: buildHeaders(),
     body: JSON.stringify({ action: 'question', gap, resume }),
@@ -170,7 +171,7 @@ export async function formatFollowUpExperience(
   userResponse: string,
   gap: string
 ): Promise<AtomicExperience> {
-  const res = await fetch(`${BASE_URL}/followup/format`, {
+  const res = await authFetch(`${BASE_URL}/followup/format`, {
     method: 'POST',
     headers: buildHeaders(),
     body: JSON.stringify({ action: 'format', userResponse, gap }),
@@ -186,7 +187,7 @@ export async function generateTailoredResume(
   jobDescription: ParsedJobDescription,
   matchResult?: AnalysisMatchResult
 ): Promise<GeneratedResume> {
-  const res = await fetch(`${BASE_URL}/generate-resume`, {
+  const res = await authFetch(`${BASE_URL}/generate-resume`, {
     method: 'POST',
     headers: buildHeaders(),
     body: JSON.stringify({ resume, jobDescription, matchResult }),

@@ -1,0 +1,14 @@
+import React,{useEffect,useState} from 'react';
+import {Link,useNavigate} from 'react-router-dom';
+import type {JobPreparation} from '../../types';
+import {deletePreparation,listPreparations,themeNames} from '../../services/preparations';
+
+export const PreparationsView:React.FC=()=>{const[items,setItems]=useState<JobPreparation[]>([]);const[loading,setLoading]=useState(true);const[error,setError]=useState('');const navigate=useNavigate();
+  const load=()=>{setLoading(true);listPreparations().then(setItems).catch(error=>setError(error instanceof Error?error.message:'读取失败')).finally(()=>setLoading(false));};useEffect(load,[]);
+  const remove=async(item:JobPreparation)=>{if(!window.confirm(`确定删除「${item.name}」吗？公开链接也会失效。`))return;await deletePreparation(item.id);load();};
+  return <div className="page-shell animate-fade-in"><header className="page-header items-center"><div><p className="eyebrow">JOB PREPARATION</p><h1>我的求职准备</h1><p className="page-subtitle">把岗位分析和简历变成有设计感的求职主页，并准备真正会被问到的问题。</p></div><Link to="/preparations/new" className="btn-primary">＋ 新建求职准备</Link></header>
+  {error&&<div className="mb-5 rounded-lg border border-terra-border bg-terra-light p-4 text-sm text-terra">{error}</div>}
+  {loading?<div className="card text-center text-ink-secondary">正在读取求职准备...</div>:items.length===0?<div className="card py-20 text-center"><div className="text-4xl">✦</div><h2 className="mt-4 text-xl">还没有求职准备</h2><p className="mt-2 text-sm text-ink-secondary">从岗位分析创建定制主页，或者先做一份通用求职主页。</p><Link to="/preparations/new" className="btn-primary mt-6">创建第一份主页</Link></div>:<div className="grid gap-4 lg:grid-cols-2">{items.map(item=><article key={item.id} className="card group"><div className="flex items-start justify-between gap-4"><div><div className="flex flex-wrap gap-2"><span className="rounded-full bg-terra-light px-2 py-1 text-[11px] text-terra">{item.mode==='targeted'?'针对岗位':'通用主页'}</span><span className={`rounded-full px-2 py-1 text-[11px] ${item.publicStatus==='published'?'bg-mossLight text-moss':'bg-canvas text-ink-weak'}`}>{item.publicStatus==='published'?'已发布':'私有草稿'}</span></div><h2 className="mt-4 text-xl font-semibold">{item.name}</h2><p className="mt-1 text-sm text-ink-secondary">{item.careerDirection}</p></div><button onClick={()=>void remove(item)} className="text-xs text-ink-weak opacity-0 transition hover:text-terra group-hover:opacity-100">删除</button></div><div className="mt-6 flex items-end justify-between border-t border-line pt-4"><div className="text-xs text-ink-weak"><p>{themeNames[item.themeId]}</p><p className="mt-1">更新于 {new Date(item.updatedAt).toLocaleString('zh-CN')}</p></div><button onClick={()=>navigate(`/preparations/${item.id}/home`)} className="btn-ghost h-9 px-4 text-xs">继续编辑 →</button></div></article>)}</div>}
+  </div>;
+};
+export default PreparationsView;

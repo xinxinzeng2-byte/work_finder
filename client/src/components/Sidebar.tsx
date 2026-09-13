@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-export type SidebarView = 'jobs' | 'resumes';
+export type SidebarView = 'jobs' | 'preparations' | 'resumes';
 
 interface Props {
   currentView: SidebarView;
@@ -10,11 +10,12 @@ interface Props {
   showLogout?: boolean;
   jobCount: number;
   resumeCount: number;
+  preparationCount?: number;
   hasApiKey: boolean;
   userEmail?: string;
 }
 
-export const Sidebar: React.FC<Props> = ({ currentView, onViewChange, onOpenSettings, onLogout, showLogout = true, jobCount, resumeCount, hasApiKey, userEmail }) => {
+export const Sidebar: React.FC<Props> = ({ currentView, onViewChange, onOpenSettings, onLogout, showLogout = true, jobCount, resumeCount, preparationCount = 0, hasApiKey, userEmail }) => {
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const email = userEmail?.trim() || '';
@@ -49,6 +50,7 @@ export const Sidebar: React.FC<Props> = ({ currentView, onViewChange, onOpenSett
 
     <nav className="flex-1 space-y-1 px-3 py-6">
       <SidebarButton active={currentView === 'jobs'} onClick={() => onViewChange('jobs')} icon="▣" label="我的岗位投递" count={jobCount} />
+      <SidebarButton active={currentView === 'preparations'} onClick={() => onViewChange('preparations')} icon="✦" label="我的求职准备" count={preparationCount} />
       <SidebarButton active={currentView === 'resumes'} onClick={() => onViewChange('resumes')} icon="▤" label="简历与能力库" count={resumeCount} />
     </nav>
 

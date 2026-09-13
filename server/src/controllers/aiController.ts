@@ -8,6 +8,10 @@ import {
   formatFollowUpExperience,
   generateTailoredResume,
   testApiKey,
+  generatePortfolioDocument,
+  generatePortfolioInterview,
+  optimizePortfolioBlock,
+  proposePortfolioSupplement,
 } from '../services/deepseekService';
 import type { ParsedResume, ParsedJobDescription, MatchResult } from '../types';
 import { getUserId } from '../services/authService';
@@ -16,7 +20,7 @@ import { getUserApiKey } from '../services/userApiKeyService';
 /**
  * 从请求中获取 API Key（优先请求头，其次环境变量）
  */
-async function getApiKey(req: Request): Promise<string> {
+export async function getApiKey(req: Request): Promise<string> {
   const keyFromHeader = req.headers['x-deepseek-key'] as string | undefined;
   if (keyFromHeader) return keyFromHeader;
   try {
@@ -27,6 +31,13 @@ async function getApiKey(req: Request): Promise<string> {
   }
   return process.env.DEEPSEEK_API_KEY || '';
 }
+
+function authorizePreparationAI(req:Request,res:Response){if(req.headers['x-deepseek-key'])return true;try{getUserId(req);return true;}catch{res.status(401).json({error:'未登录或登录已过期'});return false;}}
+
+export async function handlePreparationGenerate(req:Request,res:Response){if(!authorizePreparationAI(req,res))return;try{const key=await getApiKey(req);if(!key){res.status(400).json({error:'未配置 DeepSeek API Key'});return;}const {resume,direction,jobDescription,matchResult}=req.body;if(!resume||!direction){res.status(400).json({error:'缺少简历或求职方向'});return;}res.json({document:await generatePortfolioDocument(key,resume,direction,jobDescription,matchResult)});}catch(error){res.status(500).json({error:`求职主页生成失败: ${error instanceof Error?error.message:String(error)}`});}}
+export async function handlePreparationOptimize(req:Request,res:Response){if(!authorizePreparationAI(req,res))return;try{const key=await getApiKey(req);const {block,direction,instruction,resume}=req.body;if(!key||!block||!resume){res.status(400).json({error:'局部优化数据不完整'});return;}res.json(await optimizePortfolioBlock(key,block,direction,instruction||'让表达更清晰、更有说服力',resume));}catch(error){res.status(500).json({error:`局部优化失败: ${error instanceof Error?error.message:String(error)}`});}}
+export async function handlePreparationSuggest(req:Request,res:Response){if(!authorizePreparationAI(req,res))return;try{const key=await getApiKey(req);const {block,direction,suggestion,userFacts}=req.body;if(!key||!block||!userFacts){res.status(400).json({error:'请先填写真实经历'});return;}res.json(await proposePortfolioSupplement(key,block,direction,suggestion||'',userFacts));}catch(error){res.status(500).json({error:`内容补充失败: ${error instanceof Error?error.message:String(error)}`});}}
+export async function handlePreparationInterview(req:Request,res:Response){if(!authorizePreparationAI(req,res))return;try{const key=await getApiKey(req);const {direction,document,jobDescription,matchResult}=req.body;if(!key||!direction||!document){res.status(400).json({error:'面试准备数据不完整'});return;}res.json({questions:await generatePortfolioInterview(key,direction,document,jobDescription,matchResult)});}catch(error){res.status(500).json({error:`面试问题生成失败: ${error instanceof Error?error.message:String(error)}`});}}
 
 // 测试 API Key
 export async function handleTestApiKey(req: Request, res: Response): Promise<void> {

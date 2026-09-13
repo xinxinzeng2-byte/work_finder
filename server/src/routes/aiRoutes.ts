@@ -8,6 +8,10 @@ import {
   handleGenerateFollowUpQuestion,
   handleFormatFollowUpExperience,
   handleGenerateResume,
+  handlePreparationGenerate,
+  handlePreparationInterview,
+  handlePreparationOptimize,
+  handlePreparationSuggest,
 } from '../controllers/aiController';
 import { handleAnalyzeMatchV2 } from '../controllers/matchControllerV2';
 
@@ -34,5 +38,9 @@ router.post('/followup/format', handleFormatFollowUpExperience);
 
 // 生成定制简历
 router.post('/generate-resume', handleGenerateResume);
+router.post('/preparations/:id/generate', handlePreparationGenerate);
+router.post('/preparations/:id/blocks/:blockId/optimize', handlePreparationOptimize);
+router.post('/preparations/:id/suggestions/:suggestionId/propose', handlePreparationSuggest);
+router.post('/preparations/:id/interview/generate', handlePreparationInterview);
 
 export default router;

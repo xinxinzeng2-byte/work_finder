@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { getSql } from '../services/database';
-import { createToken, getUserId, hashPassword, verifyPassword } from '../services/authService';
+import { createRefreshSession, createToken, getUserId, hasRefreshCookie, hashPassword, revokeRefreshSession, rotateRefreshSession, verifyPassword } from '../services/authService';
 import { isValidEmail, normalizeEmail } from '../services/emailValidation';
 import { clearUserApiKey, saveUserApiKey } from '../services/userApiKeyService';
 
@@ -73,6 +73,7 @@ router.post('/register', async (req: Request, res: Response) => {
       VALUES (${email}, ${passwordHash})
       RETURNING id, email
     `);
+    await createRefreshSession(user.id, res);
     res.status(201).json({ token: createToken(user.id), user });
   } catch (error) {
     console.error('[Auth register]', error);
@@ -95,6 +96,7 @@ router.post('/login', async (req: Request, res: Response) => {
       res.status(401).json({ error: '邮箱或密码错误' });
       return;
     }
+    await createRefreshSession(user.id, res);
     res.status(200).json({ token: createToken(user.id), user: { id: user.id, email: user.email } });
   } catch (error) {
     console.error('[Auth login]', error);
@@ -116,6 +118,7 @@ router.get('/me', async (req: Request, res: Response) => {
       res.status(401).json({ error: '用户不存在' });
       return;
     }
+    if (!hasRefreshCookie(req)) await createRefreshSession(user.id, res);
     res.status(200).json({ user });
   } catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') {
@@ -125,6 +128,19 @@ router.get('/me', async (req: Request, res: Response) => {
     console.error('[Auth me]', error);
     res.status(500).json({ error: '读取用户信息失败' });
   }
+});
+
+router.post('/refresh', async (req, res) => {
+  try {
+    const user = await rotateRefreshSession(req, res);
+    if (!user) { res.status(401).json({ error: '登录已过期' }); return; }
+    res.json({ token: createToken(user.id), user });
+  } catch { res.status(500).json({ error: '刷新登录状态失败' }); }
+});
+
+router.post('/logout', async (req, res) => {
+  try { await revokeRefreshSession(req, res); res.status(204).end(); }
+  catch { res.status(500).json({ error: '退出登录失败' }); }
 });
 
 export default router;

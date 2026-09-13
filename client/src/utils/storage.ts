@@ -12,6 +12,7 @@ import type {
   ParsedJobDescription,
   ParsedResume,
 } from '../types';
+import { authFetch } from '../services/http';
 
 const KEYS = {
   RESUME: 'wf_resume',
@@ -313,7 +314,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 12_000);
   try {
-    const response = await fetch(`${API_BASE}${path}`, { ...init, headers, signal: controller.signal, cache: 'no-store' });
+    const response = await authFetch(`${API_BASE}${path}`, { ...init, headers, signal: controller.signal, cache: 'no-store' });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
       throw new Error(data.error || `请求失败 (${response.status})`);
@@ -570,9 +571,10 @@ export function loadResumes(): ResumeItem[] {
 
 export function saveResume(
   resume: ParsedResume,
-  options?: { name?: string; originalText?: string; fileName?: string; sourceFileData?: string; sourceMimeType?: string },
+  options?: { name?: string; originalText?: string; fileName?: string; sourceFileData?: string; sourceMimeType?: string; makeCurrent?: boolean },
 ): ResumeItem {
   const resumes = loadResumes();
+  const makeCurrent = options?.makeCurrent !== false;
   const item: ResumeItem = {
     id: generateId(),
     name: options?.name || `原始简历 ${resumes.filter((r) => r.type === 'original').length + 1}`,
@@ -584,9 +586,9 @@ export function saveResume(
     sourceMimeType: options?.sourceMimeType,
     uploadedAt: new Date().toISOString(),
     version: 1,
-    isCurrent: true,
+    isCurrent: makeCurrent,
   };
-  resumes.forEach((r) => (r.isCurrent = false));
+  if (makeCurrent) resumes.forEach((r) => (r.isCurrent = false));
   resumes.push(item);
   try {
     localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
@@ -595,8 +597,10 @@ export function saveResume(
     item.sourceFileData = undefined;
     localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
   }
-  localStorage.setItem(KEYS.CURRENT_RESUME_ID, item.id);
-  localStorage.setItem(KEYS.RESUME, JSON.stringify(resume));
+  if (makeCurrent) {
+    localStorage.setItem(KEYS.CURRENT_RESUME_ID, item.id);
+    localStorage.setItem(KEYS.RESUME, JSON.stringify(resume));
+  }
   if (shouldSync()) enqueueCloudWrite(`resume:${item.id}`, () => syncResume(item));
   return item;
 }

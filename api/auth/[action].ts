@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { sql } from '../_lib/db';
-import { createToken, hashPassword, verifyPassword, getUserId } from '../_lib/auth';
+import { createRefreshSession, createToken, hashPassword, verifyPassword, getUserId, hasRefreshCookie, refreshSession, revokeRefreshSession } from '../_lib/auth';
 import { allowMethods, bodyObject, isNonEmptyString } from '../_lib/http';
 import { isValidEmail, normalizeEmail } from '../_lib/email';
 import { handleApiKey } from '../_lib/apiKey';
@@ -11,6 +11,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (action === 'register') return register(req, res);
   if (action === 'login') return login(req, res);
   if (action === 'me') return me(req, res);
+  if (action === 'refresh') return refresh(req, res);
+  if (action === 'logout') return logout(req, res);
   if (action === 'api-key') return handleApiKey(req, res);
   res.status(404).json({ error: '认证接口不存在' });
 }
@@ -28,6 +30,7 @@ async function register(req: VercelRequest, res: VercelResponse) {
     if (existing.length) { res.status(409).json({ error: '该邮箱已注册' }); return; }
     const passwordHash = await hashPassword(password);
     const [user] = await sql`INSERT INTO users (email, password_hash) VALUES (${email}, ${passwordHash}) RETURNING id, email`;
+    await createRefreshSession(user.id, res);
     res.status(201).json({ token: createToken(user.id), user });
   } catch { res.status(500).json({ error: '注册失败，请稍后重试' }); }
 }
@@ -41,6 +44,7 @@ async function login(req: VercelRequest, res: VercelResponse) {
   try {
     const [user] = await sql`SELECT id, email, password_hash FROM users WHERE email = ${email}`;
     if (!user || !(await verifyPassword(password, user.password_hash))) { res.status(401).json({ error: '邮箱或密码错误' }); return; }
+    await createRefreshSession(user.id, res);
     res.status(200).json({ token: createToken(user.id), user: { id: user.id, email: user.email } });
   } catch { res.status(500).json({ error: '登录失败，请稍后重试' }); }
 }
@@ -51,9 +55,25 @@ async function me(req: VercelRequest, res: VercelResponse) {
     const id = getUserId(req);
     const [user] = await sql`SELECT id, email FROM users WHERE id = ${id}`;
     if (!user) { res.status(401).json({ error: '用户不存在' }); return; }
+    if (!hasRefreshCookie(req)) await createRefreshSession(user.id, res);
     res.status(200).json({ user });
   } catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') res.status(401).json({ error: '未登录或登录已过期' });
     else res.status(500).json({ error: '读取用户信息失败' });
   }
+}
+
+async function refresh(req: VercelRequest, res: VercelResponse) {
+  if (!allowMethods(req, res, ['POST'])) return;
+  try {
+    const user = await refreshSession(req, res);
+    if (!user) { res.status(401).json({ error: '登录已过期' }); return; }
+    res.status(200).json({ token: createToken(user.id), user });
+  } catch { res.status(500).json({ error: '刷新登录状态失败' }); }
+}
+
+async function logout(req: VercelRequest, res: VercelResponse) {
+  if (!allowMethods(req, res, ['POST'])) return;
+  try { await revokeRefreshSession(req, res); res.status(204).end(); }
+  catch { res.status(500).json({ error: '退出登录失败' }); }
 }

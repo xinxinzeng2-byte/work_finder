@@ -288,6 +288,36 @@ export interface GeneratedResume {
   coverLetter?: string;      // 求职信/打招呼话术
 }
 
+export type ThemeId = 'clean-professional' | 'product-home' | 'creative-portfolio' | 'enterprise-tech';
+export type PortfolioBlockType = 'hero' | 'advantages' | 'projects' | 'experience' | 'skills' | 'education' | 'contact';
+
+export interface PortfolioContact {
+  id: string;
+  kind: 'email' | 'phone' | 'website' | 'github' | 'linkedin' | 'wechat' | 'custom';
+  label: string;
+  value: string;
+  public: boolean;
+}
+
+export interface PortfolioBlock {
+  id: string;
+  type: PortfolioBlockType;
+  title: string;
+  visible: boolean;
+  order: number;
+  data: Record<string, unknown>;
+  sourceRefs: string[];
+}
+
+export interface PortfolioDocument {
+  schemaVersion: 1;
+  direction: string;
+  identity: { name: string; headline: string; tagline: string; location?: string };
+  blocks: PortfolioBlock[];
+  contacts: PortfolioContact[];
+  primaryAction: { label: string; contactId?: string; href?: string };
+}
+
 // DeepSeek API 请求参数
 export interface DeepSeekMessage {
   role: 'system' | 'user' | 'assistant';

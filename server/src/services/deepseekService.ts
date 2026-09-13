@@ -11,8 +11,11 @@ import type {
   MatchItem,
   CapabilityEvidenceItem,
   MatchDimensionKey,
+  PortfolioBlock,
+  PortfolioDocument,
 } from '../types';
 import { calculateCapabilityRadar, normalizeCapabilityEvidence } from './capabilityScoring';
+import { validatePortfolioBlockData, validatePortfolioDocument } from './portfolioValidation';
 
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 const MODEL = 'deepseek-chat';
@@ -600,6 +603,48 @@ ${matchData ? `【匹配分析】\n${JSON.stringify(matchData, null, 2)}` : ''}
   } catch (error) {
     throw new Error(`简历生成失败: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+function text(value: unknown): string { return typeof value === 'string' ? value.trim() : ''; }
+function strings(value: unknown): string[] { return Array.isArray(value) ? value.map(text).filter(Boolean) : []; }
+
+export async function generatePortfolioDocument(apiKey: string, resume: ParsedResume, direction: string, jobDescription?: ParsedJobDescription, matchResult?: MatchResult): Promise<PortfolioDocument> {
+  const content = await callDeepSeek(apiKey, [
+    { role:'system', content:`你是资深个人品牌与求职主页策划师。根据用户已提供的真实简历，生成结构化 Portfolio 内容。不得编造公司、职位、时间、数字、项目和业绩；没有来源的内容宁可省略。输出合法 JSON。主页不是 PDF 简历复刻，要有鲜明个人定位、核心优势、项目案例和行动导向。` },
+    { role:'user', content:`求职方向：${direction}\n岗位：${JSON.stringify(jobDescription||null)}\n匹配差距：${JSON.stringify(matchResult?.gaps||[])}\n简历：${JSON.stringify(resume)}\n输出：{"headline":"一句个人定位","tagline":"两句价值主张","advantages":["优势"],"projects":[{"name":"项目名","summary":"背景与行动","results":["真实结果"],"sourceId":"经历ID"}],"experiences":[{"company":"","role":"","period":"","description":"","highlights":[""],"sourceId":"经历ID"}],"skills":[{"category":"","items":[""]}],"education":""}` },
+  ], { temperature:0.35, jsonMode:true });
+  let parsed:any={}; try { parsed=JSON.parse(content); } catch { throw new Error('求职主页生成结果不是合法 JSON'); }
+  const id=()=>`block_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+  const allowedSources=new Set([...resume.experiences.map(item=>item.id),...resume.skills.map(item=>item.id)]);
+  const sourcedProjects=(Array.isArray(parsed.projects)?parsed.projects:[]).filter((item:any)=>allowedSources.has(text(item?.sourceId)));
+  const sourcedExperiences=(Array.isArray(parsed.experiences)?parsed.experiences:[]).filter((item:any)=>allowedSources.has(text(item?.sourceId)));
+  const blocks:PortfolioBlock[]=[
+    {id:id(),type:'advantages',title:'核心优势',visible:true,order:0,data:{items:strings(parsed.advantages)},sourceRefs:[...allowedSources]},
+    {id:id(),type:'projects',title:'项目经历',visible:sourcedProjects.length>0,order:1,data:{items:sourcedProjects},sourceRefs:sourcedProjects.map((item:any)=>text(item.sourceId))},
+    {id:id(),type:'experience',title:'工作经历',visible:true,order:2,data:{items:sourcedExperiences.length?sourcedExperiences:resume.experiences},sourceRefs:resume.experiences.map(item=>item.id)},
+    {id:id(),type:'skills',title:'专业技能',visible:true,order:3,data:{groups:Array.isArray(parsed.skills)?parsed.skills:[]},sourceRefs:resume.skills.map(item=>item.id)},
+    {id:id(),type:'education',title:'教育背景',visible:!!text(parsed.education||resume.basicInfo.education),order:4,data:{content:text(parsed.education||resume.basicInfo.education)},sourceRefs:[]},
+    {id:id(),type:'contact',title:'保持联系',visible:true,order:5,data:{heading:'期待与你聊聊新的机会',description:`如果你正在寻找${direction}相关人才，欢迎与我联系。`},sourceRefs:[]},
+  ];
+  const contacts=[] as PortfolioDocument['contacts'];
+  if(resume.basicInfo.email)contacts.push({id:'contact_email',kind:'email',label:'邮箱',value:resume.basicInfo.email,public:false});
+  if(resume.basicInfo.phone)contacts.push({id:'contact_phone',kind:'phone',label:'电话',value:resume.basicInfo.phone,public:false});
+  return validatePortfolioDocument({schemaVersion:1,direction,identity:{name:text(resume.basicInfo.name)||'你的名字',headline:text(parsed.headline)||direction,tagline:text(parsed.tagline)||`专注于${direction}，用清晰的方法解决真实问题。`,location:text(resume.basicInfo.city)||undefined},blocks,contacts,primaryAction:{label:'联系我'}});
+}
+
+export async function optimizePortfolioBlock(apiKey:string, block:PortfolioBlock, direction:string, instruction:string, resume:ParsedResume):Promise<{data:Record<string,unknown>;explanation:string}> {
+  const content=await callDeepSeek(apiKey,[{role:'system',content:'你是求职内容编辑。只优化给定区块，不得新增简历中不存在的事实、数字、公司或经历。输出合法 JSON。'},{role:'user',content:`方向：${direction}\n要求：${instruction}\n区块：${JSON.stringify(block)}\n事实来源：${JSON.stringify(resume)}\n输出 {"data":与原区块 data 同结构的新内容,"explanation":"修改说明"}`}],{temperature:0.3,jsonMode:true});
+  const parsed=JSON.parse(content); if(!parsed.data||typeof parsed.data!=='object')throw new Error('局部优化结果不完整'); return {data:validatePortfolioBlockData(parsed.data),explanation:text(parsed.explanation).slice(0,1000)};
+}
+
+export async function proposePortfolioSupplement(apiKey:string, block:PortfolioBlock, direction:string, suggestion:string, userFacts:string):Promise<{data:Record<string,unknown>;explanation:string}> {
+  const content=await callDeepSeek(apiKey,[{role:'system',content:'你只可使用用户刚刚确认的事实补充求职主页指定区块，不得推测和夸大。保持原数据结构，输出合法 JSON。'},{role:'user',content:`方向：${direction}\n待完善：${suggestion}\n用户事实：${userFacts}\n目标区块：${JSON.stringify(block)}\n输出 {"data":新 data,"explanation":"如何使用了用户事实"}`}],{temperature:0.25,jsonMode:true});
+  const parsed=JSON.parse(content);if(!parsed.data||typeof parsed.data!=='object')throw new Error('内容补充结果不完整');return{data:validatePortfolioBlockData(parsed.data),explanation:text(parsed.explanation).slice(0,1000)};
+}
+
+export async function generatePortfolioInterview(apiKey:string,direction:string,document:PortfolioDocument,jobDescription?:ParsedJobDescription,matchResult?:MatchResult):Promise<Array<{id:string;category:'role'|'experience'|'gap'|'scenario'|'reverse';question:string;rationale:string;relatedSource?:string;starred:false;answerNote:''}>> {
+  const content=await callDeepSeek(apiKey,[{role:'system',content:'你是温和但专业的面试官。基于求职主页和目标岗位生成有针对性的面试问题，不提供答案。输出合法 JSON。'},{role:'user',content:`方向：${direction}\n岗位：${JSON.stringify(jobDescription||null)}\n差距：${JSON.stringify(matchResult?.gaps||[])}\n主页：${JSON.stringify(document)}\n每类生成2题：role岗位高频、experience经历深挖、gap差距风险、scenario情景专业、reverse反问面试官。输出 {"questions":[{"category":"role","question":"","rationale":"","relatedSource":""}]}`}],{temperature:0.45,jsonMode:true});
+  const parsed=JSON.parse(content);const allowed=['role','experience','gap','scenario','reverse'];return(Array.isArray(parsed.questions)?parsed.questions:[]).filter((item:any)=>allowed.includes(item.category)&&text(item.question)).slice(0,50).map((item:any,index:number)=>({id:`iq_${Date.now()}_${index}`,category:item.category,question:text(item.question).slice(0,800),rationale:text(item.rationale).slice(0,1000),relatedSource:text(item.relatedSource).slice(0,240)||undefined,starred:false as const,answerNote:'' as const}));
 }
 
 /**
