@@ -4,7 +4,7 @@ import type {JobPreparation} from '../../types';
 import {deletePreparation,listPreparations,themeNames} from '../../services/preparations';
 
 export const PreparationsView:React.FC=()=>{const[items,setItems]=useState<JobPreparation[]>([]);const[loading,setLoading]=useState(true);const[error,setError]=useState('');const navigate=useNavigate();
-  const load=()=>{setLoading(true);listPreparations().then(setItems).catch(error=>setError(error instanceof Error?error.message:'读取失败')).finally(()=>setLoading(false));};useEffect(load,[]);
+  const load=()=>{setLoading(true);setError('');listPreparations().then(setItems).catch(error=>setError(error instanceof Error?error.message:'读取失败')).finally(()=>setLoading(false));};useEffect(load,[]);
   const remove=async(item:JobPreparation)=>{if(!window.confirm(`确定删除「${item.name}」吗？公开链接也会失效。`))return;await deletePreparation(item.id);load();};
   return <div className="page-shell animate-fade-in"><header className="page-header items-center"><div><p className="eyebrow">JOB PREPARATION</p><h1>我的求职准备</h1><p className="page-subtitle">把岗位分析和简历变成有设计感的求职主页，并准备真正会被问到的问题。</p></div><Link to="/preparations/new" className="btn-primary">＋ 新建求职准备</Link></header>
   {error&&<div className="mb-5 rounded-lg border border-terra-border bg-terra-light p-4 text-sm text-terra">{error}</div>}
