@@ -4,7 +4,7 @@ import { parseResumeFile, parseResumeText, readFileAsDataUrl } from '../../servi
 import { deleteResume, hasApiKey, loadResumes, mergeExperiencesFromResumes, mergeSkillsFromResumes, renameResume, saveResume, setCurrentResume, updateMergedSkill, removeMergedSkill, updateMergedExperience, removeMergedExperience, type ResumeItem } from '../../utils/storage';
 import ResumeImportModal from '../ResumeImportModal';
 import ResumePreviewModal from '../ResumePreviewModal';
-import { downloadResume } from '../../utils/resumeExport';
+import { downloadResumeHtml, downloadResumePdf } from '../../utils/resumeExport';
 
 interface Props {
   onResumeUpdate: (resume: ParsedResume | null) => void;
@@ -21,6 +21,7 @@ export const ResumeManagerView: React.FC<Props> = ({ onResumeUpdate, onNeedApiKe
   const [previewItem, setPreviewItem] = useState<ResumeItem | null>(null);
   const [renameItem, setRenameItem] = useState<ResumeItem | null>(null);
   const [renameInput, setRenameInput] = useState('');
+  const [downloadId, setDownloadId] = useState<string | null>(null);
   const [editSkillId, setEditSkillId] = useState<string | null>(null);
   const [editingSkill, setEditingSkill] = useState<Partial<MergedSkill>>({});
   const [editExpKey, setEditExpKey] = useState<string | null>(null);
@@ -115,7 +116,7 @@ export const ResumeManagerView: React.FC<Props> = ({ onResumeUpdate, onNeedApiKe
   };
 
   return <div className="page-shell animate-fade-in">
-    <header className="page-header items-center"><div><p className="eyebrow">RESUME & SKILL LIBRARY</p><h1>简历与能力库</h1><p className="page-subtitle">原始简历是能力来源，定制简历是岗位分析后的输出。</p></div><button onClick={openImport} disabled={loading} className="btn-primary">＋ 导入简历</button></header>
+    <header className="page-header items-center"><div><p className="eyebrow">RESUME & SKILL LIBRARY</p><h1>简历与能力库</h1><p className="page-subtitle">定制简历是岗位分析后的输出。合并能力库的能力和经历来源于原始简历。</p></div><button onClick={openImport} disabled={loading} className="btn-primary">＋ 导入简历</button></header>
 
     {error && <div className="mb-5 rounded-lg border border-terra-border bg-terra-light px-4 py-3 text-sm text-terra">{error}</div>}
 
@@ -151,7 +152,7 @@ export const ResumeManagerView: React.FC<Props> = ({ onResumeUpdate, onNeedApiKe
             </div>
             <div className="flex flex-wrap justify-end gap-2">
               <button onClick={() => setPreviewItem(item)} className="btn-ghost h-8 px-3 text-xs">预览</button>
-              <button onClick={() => void downloadResume(item)} className="btn-ghost h-8 px-3 text-xs">下载</button>
+              <div className="relative"><button onClick={() => setDownloadId(current => current === item.id ? null : item.id)} className="btn-ghost h-8 gap-1 px-3 text-xs" aria-expanded={downloadId===item.id}><span>下载</span><svg className="h-3 w-3 shrink-0" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round"/></svg></button>{downloadId===item.id&&<div className="absolute right-0 top-10 z-20 w-36 overflow-hidden rounded-lg border border-line bg-paper p-1 shadow-card"><button className="block w-full rounded px-3 py-2 text-left text-xs hover:bg-canvas" onClick={()=>{downloadResumeHtml(item);setDownloadId(null);}}>HTML 文件</button><button className="block w-full rounded px-3 py-2 text-left text-xs hover:bg-canvas" onClick={()=>{downloadResumePdf(item);setDownloadId(null);}}>PDF 文件</button></div>}</div>
               <button onClick={() => openRename(item)} className="btn-ghost h-8 px-3 text-xs">重命名</button>
               {item.type === 'original' && !item.isCurrent && (
                 <button onClick={() => { setCurrentResume(item.id); onResumeUpdate(item.resume); refresh(); }} className="btn-ghost h-8 px-3 text-xs">设为默认</button>

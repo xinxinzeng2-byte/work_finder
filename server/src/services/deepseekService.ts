@@ -637,9 +637,9 @@ export async function optimizePortfolioBlock(apiKey:string, block:PortfolioBlock
   const parsed=JSON.parse(content); if(!parsed.data||typeof parsed.data!=='object')throw new Error('局部优化结果不完整'); return {data:validatePortfolioBlockData(parsed.data),explanation:text(parsed.explanation).slice(0,1000)};
 }
 
-export async function proposePortfolioSupplement(apiKey:string, block:PortfolioBlock, direction:string, suggestion:string, userFacts:string):Promise<{data:Record<string,unknown>;explanation:string}> {
-  const content=await callDeepSeek(apiKey,[{role:'system',content:'你只可使用用户刚刚确认的事实补充求职主页指定区块，不得推测和夸大。保持原数据结构，输出合法 JSON。'},{role:'user',content:`方向：${direction}\n待完善：${suggestion}\n用户事实：${userFacts}\n目标区块：${JSON.stringify(block)}\n输出 {"data":新 data,"explanation":"如何使用了用户事实"}`}],{temperature:0.25,jsonMode:true});
-  const parsed=JSON.parse(content);if(!parsed.data||typeof parsed.data!=='object')throw new Error('内容补充结果不完整');return{data:validatePortfolioBlockData(parsed.data),explanation:text(parsed.explanation).slice(0,1000)};
+export async function polishPortfolioSuggestion(apiKey:string, direction:string, suggestion:string, userFacts:string):Promise<{text:string}> {
+  const content=await callDeepSeek(apiKey,[{role:'system',content:'你是求职内容润色助手。只润色用户明确提供的真实事实，不得增加、推测或夸大公司、职位、时间、数字、学历、项目和结果。直接输出润色后的中文文本，不要解释，不要使用 Markdown。'},{role:'user',content:`求职方向：${direction}\n内容建议：${suggestion}\n用户原始输入：\n${userFacts}\n\n请在不改变事实的前提下，整理为清晰、专业、便于复制到求职主页的表述。`}],{temperature:0.25});
+  const polished=content.trim();if(!polished)throw new Error('AI 未返回润色内容');return{text:polished};
 }
 
 export async function generatePortfolioInterview(apiKey:string,direction:string,document:PortfolioDocument,jobDescription?:ParsedJobDescription,matchResult?:MatchResult):Promise<Array<{id:string;category:'role'|'experience'|'gap'|'scenario'|'reverse';question:string;rationale:string;relatedSource?:string;starred:false;answerNote:''}>> {

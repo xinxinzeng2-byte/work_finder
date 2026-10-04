@@ -1,5 +1,49 @@
 # 更新日志
 
+## 升级求职主页编辑与简历导出体验（2026-10-04）
+
+### 产品功能
+
+- **求职主页支持所见即所得编辑**
+  - 摘要：姓名、个人定位、优势、项目、经历、技能和教育等文字可直接在主页预览中编辑；区块导航保留排序和显隐控制，内容建议改为基于真实信息生成可复制的润色文本，不会自动改写主页。
+  - 涉及文件：`client/src/components/PortfolioRenderer.tsx`、`client/src/components/views/PreparationEditorView.tsx`、`client/src/components/portfolio.css`、`client/src/index.css`、`client/src/services/preparations.ts`、`api/preparation-ai.ts`、`server/src/controllers/aiController.ts`、`server/src/services/deepseekService.ts`
+
+- **发布主页同步保存定制简历**
+  - 摘要：发布或更新求职主页时可为当前内容命名，并同步保存为“简历与能力库”中的定制简历；只从用户已确认的主页区块和源简历生成内容。
+  - 涉及文件：`client/src/components/views/PreparationEditorView.tsx`、`client/src/utils/preparationResume.ts`、`client/src/utils/portfolioContacts.ts`
+
+- **简历支持 HTML 与 PDF 导出**
+  - 摘要：简历列表和预览弹窗提供 HTML、PDF 两种导出入口；PDF 通过浏览器打印窗口生成，需要浏览器允许弹窗并由用户确认保存。
+  - 涉及文件：`client/src/components/ResumePreviewModal.tsx`、`client/src/components/views/ResumeManagerView.tsx`、`client/src/utils/resumeExport.ts`
+
+### 界面优化
+
+- **精简主页编辑器与公开联系方式展示**
+  - 摘要：将主题切换移入顶部工具栏，内容建议和隐私设置收纳到区块导航，扩大主页可编辑区域；公开主页联系方式改为名称与值对齐展示，不再重复显示姓名和生成说明。
+  - 涉及文件：`client/src/components/PortfolioRenderer.tsx`、`client/src/components/views/PreparationEditorView.tsx`、`client/src/components/portfolio.css`、`client/src/index.css`、`client/src/utils/portfolioContacts.ts`
+
+- **明确面试题替换与笔记边界**
+  - 摘要：将重新生成入口改为“换一批面试问题”，明确已收藏或已作答问题会保留，未保留问题可能被替换；反问面试官类问题使用独立的提问笔记文案。
+  - 涉及文件：`client/src/components/views/InterviewPreparationView.tsx`
+
+### 修复与质量
+
+- **兼容历史求职准备数据**
+  - 摘要：读取本地或云端求职准备时，自动恢复历史双重序列化的主页文档和内容建议；无法识别的建议安全降级为空列表，避免“继续编辑”进入空白页。
+  - 涉及文件：`client/src/services/preparations.ts`、`client/src/components/views/PreparationEditorView.tsx`
+
+### 测试与文档
+
+- **补充主页编辑、联系方式与历史数据回归验证**
+  - 摘要：增加可编辑文字、区块定位、公开联系方式布局、定制简历转换和历史 JSON 字符串数据的回归断言。
+  - 涉及文件：`client/tests/preparations.test.tsx`
+
+### 文档与规范
+
+- **记录本次 GitHub 提交范围**
+  - 摘要：按项目唯一更新日志格式记录求职主页编辑、定制简历与导出、面试准备文案及历史数据兼容的交付边界，不包含本地环境、依赖、构建产物和参考资料。
+  - 涉及文件：`CHANGELOG.md`
+
 ## 修复求职准备读写失败误报（2026-09-19）
 
 ### 修复与质量

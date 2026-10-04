@@ -12,6 +12,14 @@ export async function flushPreparationWrites():Promise<void>{while(pendingWrites
 
 function localItems():JobPreparation[]{try{return JSON.parse(localStorage.getItem(LOCAL_KEY)||'[]');}catch{return[];}}
 function saveLocal(items:JobPreparation[]){localStorage.setItem(LOCAL_KEY,JSON.stringify(items));}
+function parseStoredJson(value:unknown):unknown{if(typeof value!=='string')return value;try{return JSON.parse(value);}catch{return undefined;}}
+function normalizePreparation(item:JobPreparation):JobPreparation{
+  const stored=item as JobPreparation&{document?:unknown;contentSuggestions?:unknown};
+  const parsedDocument=parseStoredJson(stored.document);
+  const suggestions=parseStoredJson(stored.contentSuggestions);
+  const document=parsedDocument&&typeof parsedDocument==='object'&&!Array.isArray(parsedDocument)?parsedDocument as PortfolioDocument:emptyPortfolio(item.careerDirection);
+  return {...item,document,contentSuggestions:Array.isArray(suggestions)?suggestions.filter((value):value is ContentSuggestion=>Boolean(value)&&typeof value==='object'):[]};
+}
 
 export function emptyPortfolio(direction:string,name='你的名字'):PortfolioDocument{return{schemaVersion:1,direction,identity:{name,headline:direction,tagline:`专注于${direction}，用清晰的方法解决真实问题。`},blocks:[],contacts:[],primaryAction:{label:'联系我'}};}
 
@@ -24,14 +32,14 @@ export function buildSuggestions(job?:SavedJob):ContentSuggestion[]{
   return job.matchResult.gaps.map((gap,index)=>({id:`suggest_legacy_${index}`,title:gap.requirement,detail:gap.evidence?'已有相关内容，可以加强表达。':'历史分析中未发现明确证据。',kind:gap.evidence?'weak_expression':'missing_evidence',status:'pending',recommendedBlockTypes:['experience','projects']}));
 }
 
-export async function listPreparations():Promise<JobPreparation[]>{if(!isCloudMode)return localItems().sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));return (await jsonRequest<{preparations:JobPreparation[]}>('/api/data/preparations')).preparations;}
-export async function getPreparation(id:string):Promise<JobPreparation>{if(!isCloudMode){const item=localItems().find(value=>value.id===id);if(!item)throw new Error('求职准备不存在');return item;}return (await jsonRequest<{preparation:JobPreparation}>(`/api/data/preparations/${id}`)).preparation;}
+export async function listPreparations():Promise<JobPreparation[]>{if(!isCloudMode)return localItems().map(normalizePreparation).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));return (await jsonRequest<{preparations:JobPreparation[]}>('/api/data/preparations')).preparations.map(normalizePreparation);}
+export async function getPreparation(id:string):Promise<JobPreparation>{if(!isCloudMode){const item=localItems().find(value=>value.id===id);if(!item)throw new Error('求职准备不存在');return normalizePreparation(item);}return normalizePreparation((await jsonRequest<{preparation:JobPreparation}>(`/api/data/preparations/${id}`)).preparation);}
 export async function createPreparation(input:Omit<JobPreparation,'id'|'revision'|'status'|'createdAt'|'updatedAt'>):Promise<JobPreparation>{
-  if(isCloudMode)return(await jsonRequest<{preparation:JobPreparation}>('/api/data/preparations',{method:'POST',body:JSON.stringify(input)})).preparation;
+  if(isCloudMode)return normalizePreparation((await jsonRequest<{preparation:JobPreparation}>('/api/data/preparations',{method:'POST',body:JSON.stringify(input)})).preparation);
   const now=new Date().toISOString();const item:JobPreparation={...input,id:crypto.randomUUID(),revision:1,status:'draft',createdAt:now,updatedAt:now};const items=localItems();items.unshift(item);saveLocal(items);return item;
 }
 export async function updatePreparation(item:JobPreparation,updates:Partial<Pick<JobPreparation,'name'|'careerDirection'|'document'|'contentSuggestions'|'themeId'|'themeConfig'|'status'>>):Promise<JobPreparation>{
-  if(isCloudMode)return(await jsonRequest<{preparation:JobPreparation}>(`/api/data/preparations/${item.id}`,{method:'PATCH',body:JSON.stringify({...updates,baseRevision:item.revision})})).preparation;
+  if(isCloudMode)return normalizePreparation((await jsonRequest<{preparation:JobPreparation}>(`/api/data/preparations/${item.id}`,{method:'PATCH',body:JSON.stringify({...updates,baseRevision:item.revision})})).preparation);
   const next={...item,...updates,revision:item.revision+1,updatedAt:new Date().toISOString()};saveLocal(localItems().map(value=>value.id===item.id?next:value));return next;
 }
 export async function deletePreparation(id:string):Promise<void>{if(isCloudMode){await jsonRequest(`/api/data/preparations/${id}`,{method:'DELETE'});return;}saveLocal(localItems().filter(item=>item.id!==id));}
@@ -43,7 +51,7 @@ export async function loadPublishedPortfolio(slug:string):Promise<PublishedPortf
 function aiHeaders():Record<string,string>{const key=isCloudApiKeyMode?null:getApiKey();return key?{'x-deepseek-key':key}:{};}
 export async function generatePortfolio(id:string,payload:{resume:unknown;direction:string;jobDescription?:unknown;matchResult?:unknown}):Promise<PortfolioDocument>{return(await jsonRequest<{document:PortfolioDocument}>(`/api/ai/preparations/${id}/generate`,{method:'POST',headers:aiHeaders(),body:JSON.stringify(payload)})).document;}
 export async function optimizeBlock(preparation:JobPreparation,block:PortfolioBlock,instruction:string){return jsonRequest<{data:Record<string,unknown>;explanation:string}>(`/api/ai/preparations/${preparation.id}/blocks/${block.id}/optimize`,{method:'POST',headers:aiHeaders(),body:JSON.stringify({block,direction:preparation.careerDirection,instruction,resume:preparation.sourceResumeSnapshot})});}
-export async function proposeSupplement(preparation:JobPreparation,block:PortfolioBlock,suggestion:ContentSuggestion,userFacts:string){return jsonRequest<{data:Record<string,unknown>;explanation:string}>(`/api/ai/preparations/${preparation.id}/suggestions/${suggestion.id}/propose`,{method:'POST',headers:aiHeaders(),body:JSON.stringify({block,direction:preparation.careerDirection,suggestion:suggestion.detail,userFacts})});}
+export async function polishSuggestion(preparation:JobPreparation,suggestion:ContentSuggestion,userFacts:string){return jsonRequest<{text:string}>(`/api/ai/preparations/${preparation.id}/suggestions/${suggestion.id}/propose`,{method:'POST',headers:aiHeaders(),body:JSON.stringify({direction:preparation.careerDirection,suggestion:`${suggestion.title}：${suggestion.detail}`,userFacts})});}
 export async function generateInterview(preparation:JobPreparation):Promise<InterviewQuestion[]>{return(await jsonRequest<{questions:InterviewQuestion[]}>(`/api/ai/preparations/${preparation.id}/interview/generate`,{method:'POST',headers:aiHeaders(),body:JSON.stringify({direction:preparation.careerDirection,document:preparation.document,jobDescription:preparation.jobSnapshot,matchResult:preparation.matchResultSnapshot})})).questions;}
 
 function localKits():InterviewKit[]{try{return JSON.parse(localStorage.getItem(LOCAL_INTERVIEW_KEY)||'[]');}catch{return[];}}
