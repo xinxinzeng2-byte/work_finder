@@ -5,6 +5,7 @@ try {
   await server.ssrLoadModule('/tests/storage.test.ts');
   await server.ssrLoadModule('/tests/analysis-render.test.tsx');
   await server.ssrLoadModule('/tests/preparations.test.tsx');
+  await server.ssrLoadModule('/tests/about-render.test.tsx');
 } finally {
   await server.close();
 }
