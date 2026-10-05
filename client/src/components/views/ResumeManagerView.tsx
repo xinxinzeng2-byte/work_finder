@@ -116,7 +116,7 @@ export const ResumeManagerView: React.FC<Props> = ({ onResumeUpdate, onNeedApiKe
   };
 
   return <div className="page-shell animate-fade-in">
-    <header className="page-header items-center"><div><p className="eyebrow">RESUME & SKILL LIBRARY</p><h1>简历与能力库</h1><p className="page-subtitle">定制简历是岗位分析后的输出。合并能力库的能力和经历来源于原始简历。</p></div><button onClick={openImport} disabled={loading} className="btn-primary">＋ 导入简历</button></header>
+    <header className="page-header items-end"><div><p className="eyebrow">RESUME & SKILL LIBRARY</p><h1>简历与能力库</h1><p className="page-subtitle">定制简历是岗位分析后的输出。合并能力库的能力和经历来源于原始简历。</p></div><button onClick={openImport} disabled={loading} className="btn-primary shrink-0 whitespace-nowrap">＋ 导入简历</button></header>
 
     {error && <div className="mb-5 rounded-lg border border-terra-border bg-terra-light px-4 py-3 text-sm text-terra">{error}</div>}
 

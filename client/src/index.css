@@ -172,7 +172,7 @@
 }
 
 .prep-workspace { min-height: 100vh; background: #f5f3ef; }
-.prep-toolbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 20px 28px; border-bottom: 1px solid #e8e4df; background: rgba(255,255,255,.96); backdrop-filter: blur(12px); }
+.prep-toolbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; padding: 40px 32px 28px; border-bottom: 1px solid #e8e4df; background: rgba(255,255,255,.96); backdrop-filter: blur(12px); }
 .prep-toolbar h1 { margin-top: 4px; font-size: 24px; line-height: 1.25; }
 .prep-toolbar p { margin-top: 4px; color: #6b6b6b; font-size: 12px; }
 .theme-select { display: inline-flex; height: 40px; align-items: center; gap: 6px; border: 1.5px solid #e8e4df; border-radius: 6px; background: #fff; padding: 0 12px; color: #6b6b6b; font-size: 12px; }
@@ -183,7 +183,7 @@
 .prep-tabs a.active { border-color: #c45a3c; color: #c45a3c; font-weight: 600; }
 .prep-tabs small { margin-left: 5px; border-radius: 20px; background: #f2eee9; padding: 2px 6px; font-size: 10px; }
 .prep-grid { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 20px; max-width: 1720px; margin: auto; padding: 22px; }
-.prep-outline { position: sticky; top: 132px; align-self: start; max-height: calc(100vh - 152px); overflow: auto; border: 1px solid #e8e4df; border-radius: 10px; background: #fff; padding: 16px; }
+.prep-outline { position: sticky; top: 158px; align-self: start; max-height: calc(100vh - 178px); overflow: auto; border: 1px solid #e8e4df; border-radius: 10px; background: #fff; padding: 16px; }
 .prep-outline>h2 { margin-bottom: 10px; font-size: 13px; font-family: inherit; font-weight: 700; }
 .prep-outline>button,.outline-row { width: 100%; border-radius: 7px; color: #6b6b6b; font-size: 13px; }
 .prep-outline>button { padding: 9px 10px; text-align: left; }.prep-outline>button.active,.outline-row.active { background: #f9ede8; color: #c45a3c; }

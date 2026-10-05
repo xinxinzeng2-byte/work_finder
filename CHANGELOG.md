@@ -1,5 +1,29 @@
 # 更新日志
 
+## 统一页面操作布局并精简侧栏设置（2026-10-05）
+
+### 界面优化
+
+- **统一主页面与求职准备操作区**
+  - 摘要：将岗位投递、求职准备、简历与能力库、求职主页编辑器和面试准备的顶部操作统一为右侧底部对齐，防止按钮压缩或换行；同步调整编辑器留白和吸顶偏移，避免滚动时遮挡区块导航。
+  - 涉及文件：`client/src/components/views/JobApplicationsView.tsx`、`client/src/components/views/PreparationsView.tsx`、`client/src/components/views/ResumeManagerView.tsx`、`client/src/components/views/PreparationEditorView.tsx`、`client/src/components/views/InterviewPreparationView.tsx`、`client/src/index.css`
+
+- **精简侧栏品牌与账号区域**
+  - 摘要：删除品牌副标题并让标题与图标居中对齐；将账号首字母圆标替换为用户 SVG 图标，并统一设置、账号和退出登录三行的图标与文字列。
+  - 涉及文件：`client/src/components/Sidebar.tsx`
+
+### 安全修复
+
+- **移除失效的本地数据管理入口**
+  - 摘要：删除设置中无法备份或清除完整云端数据的“导出备份”与“清除数据”，同时移除可能将本地 DeepSeek API Key 写入备份文件的旧实现；不删除现有用户数据。
+  - 涉及文件：`client/src/components/SettingsModal.tsx`、`client/src/utils/storage.ts`
+
+### 文档与规范
+
+- **记录本次 GitHub 提交范围**
+  - 摘要：按项目唯一更新日志格式记录页面操作区对齐、侧栏精简和本地数据管理入口移除的交付边界，不包含本地环境、依赖或构建产物。
+  - 涉及文件：`CHANGELOG.md`
+
 ## 升级求职主页编辑与简历导出体验（2026-10-04）
 
 ### 产品功能

@@ -19,7 +19,6 @@ export const Sidebar: React.FC<Props> = ({ currentView, onViewChange, onOpenSett
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const email = userEmail?.trim() || '';
-  const avatarLabel = email ? email.slice(0, 1).toUpperCase() : 'U';
 
   useEffect(() => {
     if (!profileOpen) return undefined;
@@ -41,10 +40,7 @@ export const Sidebar: React.FC<Props> = ({ currentView, onViewChange, onOpenSett
     <div className="border-b border-line px-6 py-6">
       <div className="flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-terra text-lg font-bold text-white">W</div>
-        <div>
-          <h1 className="font-serif text-lg font-bold text-ink">AI 求职助手</h1>
-          <p className="text-[11px] text-ink-weak">像聊天一样补经历</p>
-        </div>
+        <h1 className="font-serif text-lg font-bold text-ink">AI 求职助手</h1>
       </div>
     </div>
 
@@ -56,7 +52,7 @@ export const Sidebar: React.FC<Props> = ({ currentView, onViewChange, onOpenSett
 
     <div className="space-y-1 px-3 pb-6">
       <button onClick={onOpenSettings} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-ink-secondary transition hover:bg-canvas hover:text-ink">
-        <span className="text-lg">⚙</span>
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center text-lg">⚙</span>
         <span className="flex-1 text-left">设置</span>
         <span className={`h-2 w-2 rounded-full ${hasApiKey ? 'bg-moss' : 'bg-amber-500'}`} />
       </button>
@@ -73,13 +69,17 @@ export const Sidebar: React.FC<Props> = ({ currentView, onViewChange, onOpenSett
           aria-label="查看登录邮箱"
           title="查看登录邮箱"
         >
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-terra-light text-xs font-semibold text-terra">{avatarLabel}</span>
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center text-ink-secondary">
+            <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 7.5a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.5 20.25a7.5 7.5 0 0 1 15 0" />
+            </svg>
+          </span>
           <span className="min-w-0 flex-1 truncate text-left">我的账号</span>
           <span className="text-xs text-ink-weak">⌄</span>
         </button>
       </div>}
       {showLogout && <button onClick={onLogout} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-ink-secondary transition hover:bg-canvas hover:text-ink">
-        <span className="w-5 text-center">↪</span>
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center">↪</span>
         <span className="flex-1 text-left">退出登录</span>
       </button>}
     </div>

@@ -63,7 +63,7 @@ export const JobApplicationsView: React.FC<Props> = ({ jobs, onNewJob, onContinu
         <h1>我的岗位投递</h1>
         <p className="page-subtitle">管理岗位分析结果，为每一次投递准备更匹配的简历。</p>
       </div>
-      <button onClick={onNewJob} className="btn-primary"><span>＋</span> 新增岗位</button>
+      <button onClick={onNewJob} className="btn-primary shrink-0 whitespace-nowrap"><span>＋</span> 新增岗位</button>
     </header>
 
     {!hasApiKey() && <div className="mb-5 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"><span>AI 功能还未启用，请先配置 API Key。</span><span className="text-xs">点击左侧「设置」</span></div>}

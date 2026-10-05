@@ -1169,32 +1169,6 @@ export function hasValidDraft(): boolean {
   return !!loadWorkflowDraft();
 }
 
-export function clearAllData(): void {
-  Object.values(KEYS).forEach((key) => {
-    if (key !== KEYS.API_KEY) localStorage.removeItem(key);
-  });
-}
-
-export function exportData(): void {
-  const data: Record<string, unknown> = {};
-  Object.entries(KEYS).forEach(([name, key]) => {
-    const value = localStorage.getItem(key);
-    if (!value) return;
-    try {
-      data[name] = JSON.parse(value);
-    } catch {
-      data[name] = value;
-    }
-  });
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `worker-finder-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 export function generateId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
   const random = Math.random().toString(16).slice(2).padEnd(24, '0').slice(0, 24);
