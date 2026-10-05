@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { getApiKey, hasApiKey, isCloudApiKeyMode, saveApiKey, saveApiKeyToCloud, exportData, clearAllData, loadCurrentResume, loadSavedJobs, type SavedJob } from '../utils/storage';
+import { getApiKey, hasApiKey, isCloudApiKeyMode, saveApiKey, saveApiKeyToCloud, loadCurrentResume, loadSavedJobs, type SavedJob } from '../utils/storage';
 import { useEffect } from 'react';
 import { analyzeMatchV2, testApiKey } from '../services/api';
 import type { MatchResultV2 } from '../types';
@@ -371,26 +371,6 @@ export const SettingsModal: React.FC<Props> = ({ open, onClose }) => {
             </div>}
           </div>
         )}
-
-        <div className="border-t border-line pt-6">
-          <h3 className="text-sm font-serif font-medium text-ink mb-3">数据管理</h3>
-          <div className="flex gap-3">
-            <button onClick={exportData} className="btn-ghost text-sm">
-              导出备份
-            </button>
-            <button
-              onClick={() => {
-                if (confirm('确定要清除所有数据吗？此操作不可恢复（API Key 保留）')) {
-                  clearAllData();
-                  location.reload();
-                }
-              }}
-              className="text-sm text-terra hover:text-terra-hover transition-colors px-4 h-10 inline-flex items-center"
-            >
-              清除数据
-            </button>
-          </div>
-        </div>
 
         <div className="border-t border-line pt-6 mt-6">
           <p className="text-xs text-ink-weak leading-relaxed">

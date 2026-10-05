@@ -266,6 +266,108 @@ export interface GeneratedResume {
   coverLetter?: string;
 }
 
+export type PreparationMode = 'targeted' | 'general';
+export type PreparationStatus = 'generating' | 'draft' | 'published';
+export type ThemeId = 'clean-professional' | 'product-home' | 'creative-portfolio' | 'enterprise-tech';
+export type PortfolioBlockType = 'hero' | 'advantages' | 'projects' | 'experience' | 'skills' | 'education' | 'contact';
+
+export interface PortfolioContact {
+  id: string;
+  kind: 'email' | 'phone' | 'website' | 'github' | 'linkedin' | 'wechat' | 'custom';
+  label: string;
+  value: string;
+  public: boolean;
+}
+
+export interface PortfolioBlock {
+  id: string;
+  type: PortfolioBlockType;
+  title: string;
+  visible: boolean;
+  order: number;
+  data: Record<string, unknown>;
+  sourceRefs: string[];
+}
+
+export interface PortfolioDocument {
+  schemaVersion: 1;
+  direction: string;
+  identity: { name: string; headline: string; tagline: string; location?: string };
+  blocks: PortfolioBlock[];
+  contacts: PortfolioContact[];
+  primaryAction: { label: string; contactId?: string; href?: string };
+}
+
+export interface ContentSuggestion {
+  id: string;
+  requirementId?: string;
+  title: string;
+  detail: string;
+  kind: 'missing_evidence' | 'weak_expression' | 'hard_gap' | 'content_completeness';
+  status: 'pending' | 'applied' | 'skipped';
+  recommendedBlockTypes: PortfolioBlockType[];
+}
+
+export interface BlockPatchProposal {
+  targetBlockId: string;
+  originalContentHash: string;
+  replacementData: Record<string, unknown>;
+  explanation: string;
+  sourceFacts: string[];
+}
+
+export interface JobPreparation {
+  id: string;
+  mode: PreparationMode;
+  name: string;
+  careerDirection: string;
+  sourceJobId?: string;
+  sourceResumeId?: string;
+  sourceResumeVersion?: number;
+  sourceResumeSnapshot: ParsedResume;
+  jobSnapshot?: ParsedJobDescription;
+  matchResultSnapshot?: AnalysisMatchResult;
+  document: PortfolioDocument;
+  documentSchemaVersion: 1;
+  contentSuggestions: ContentSuggestion[];
+  themeId: ThemeId;
+  themeConfig: Record<string, unknown>;
+  status: PreparationStatus;
+  revision: number;
+  publicSlug?: string;
+  publicStatus?: 'published' | 'unpublished';
+  publishedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InterviewQuestion {
+  id: string;
+  category: 'role' | 'experience' | 'gap' | 'scenario' | 'reverse';
+  question: string;
+  rationale: string;
+  relatedSource?: string;
+  starred: boolean;
+  answerNote: string;
+}
+
+export interface InterviewKit {
+  preparationId: string;
+  questions: InterviewQuestion[];
+  generationBasisHash: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PublishedPortfolio {
+  slug: string;
+  document: PortfolioDocument;
+  themeId: ThemeId;
+  themeConfig: Record<string, unknown>;
+  publishedAt: string;
+  updatedAt: string;
+}
+
 export interface ApiError {
   error: string;
 }

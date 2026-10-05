@@ -1,5 +1,187 @@
 # 更新日志
 
+## 完善侧栏账号菜单与关于本站说明（2026-10-06）
+
+### 产品功能
+
+- **新增关于本站说明弹窗**
+  - 摘要：在侧栏新增“关于本站”入口，通过弹窗介绍目标用户、核心功能、使用流程和开源地址；支持遮罩、关闭按钮和 Escape 键关闭，外部链接在新标签页安全打开。
+  - 涉及文件：`client/src/App.tsx`、`client/src/components/AboutModal.tsx`、`client/src/components/Sidebar.tsx`
+
+### 界面优化
+
+- **收纳并优化账号退出操作**
+  - 摘要：将云端模式的退出操作收纳到登录邮箱弹层，保留本地模式不展示退出操作的边界；移除退出图标，将文字调整为暖红色并补充悬停反馈，同时统一设置与关于本站入口的线性图标样式。
+  - 涉及文件：`client/src/components/Sidebar.tsx`
+
+### 测试与文档
+
+- **补充关于本站与侧栏回归验证**
+  - 摘要：增加关于本站内容、外链安全属性、本地模式侧栏入口和退出操作隐藏规则的服务端渲染断言，并纳入现有前端测试入口。
+  - 涉及文件：`client/tests/about-render.test.tsx`、`client/tests/run-storage-tests.mjs`
+
+### 文档与规范
+
+- **记录本次 GitHub 提交范围**
+  - 摘要：按项目唯一更新日志格式记录关于本站、账号菜单和退出样式优化的交付边界，不包含本地环境、依赖或构建产物。
+  - 涉及文件：`CHANGELOG.md`
+
+## 统一页面操作布局并精简侧栏设置（2026-10-05）
+
+### 界面优化
+
+- **统一主页面与求职准备操作区**
+  - 摘要：将岗位投递、求职准备、简历与能力库、求职主页编辑器和面试准备的顶部操作统一为右侧底部对齐，防止按钮压缩或换行；同步调整编辑器留白和吸顶偏移，避免滚动时遮挡区块导航。
+  - 涉及文件：`client/src/components/views/JobApplicationsView.tsx`、`client/src/components/views/PreparationsView.tsx`、`client/src/components/views/ResumeManagerView.tsx`、`client/src/components/views/PreparationEditorView.tsx`、`client/src/components/views/InterviewPreparationView.tsx`、`client/src/index.css`
+
+- **精简侧栏品牌与账号区域**
+  - 摘要：删除品牌副标题并让标题与图标居中对齐；将账号首字母圆标替换为用户 SVG 图标，并统一设置、账号和退出登录三行的图标与文字列。
+  - 涉及文件：`client/src/components/Sidebar.tsx`
+
+### 安全修复
+
+- **移除失效的本地数据管理入口**
+  - 摘要：删除设置中无法备份或清除完整云端数据的“导出备份”与“清除数据”，同时移除可能将本地 DeepSeek API Key 写入备份文件的旧实现；不删除现有用户数据。
+  - 涉及文件：`client/src/components/SettingsModal.tsx`、`client/src/utils/storage.ts`
+
+### 文档与规范
+
+- **记录本次 GitHub 提交范围**
+  - 摘要：按项目唯一更新日志格式记录页面操作区对齐、侧栏精简和本地数据管理入口移除的交付边界，不包含本地环境、依赖或构建产物。
+  - 涉及文件：`CHANGELOG.md`
+
+## 升级求职主页编辑与简历导出体验（2026-10-04）
+
+### 产品功能
+
+- **求职主页支持所见即所得编辑**
+  - 摘要：姓名、个人定位、优势、项目、经历、技能和教育等文字可直接在主页预览中编辑；区块导航保留排序和显隐控制，内容建议改为基于真实信息生成可复制的润色文本，不会自动改写主页。
+  - 涉及文件：`client/src/components/PortfolioRenderer.tsx`、`client/src/components/views/PreparationEditorView.tsx`、`client/src/components/portfolio.css`、`client/src/index.css`、`client/src/services/preparations.ts`、`api/preparation-ai.ts`、`server/src/controllers/aiController.ts`、`server/src/services/deepseekService.ts`
+
+- **发布主页同步保存定制简历**
+  - 摘要：发布或更新求职主页时可为当前内容命名，并同步保存为“简历与能力库”中的定制简历；只从用户已确认的主页区块和源简历生成内容。
+  - 涉及文件：`client/src/components/views/PreparationEditorView.tsx`、`client/src/utils/preparationResume.ts`、`client/src/utils/portfolioContacts.ts`
+
+- **简历支持 HTML 与 PDF 导出**
+  - 摘要：简历列表和预览弹窗提供 HTML、PDF 两种导出入口；PDF 通过浏览器打印窗口生成，需要浏览器允许弹窗并由用户确认保存。
+  - 涉及文件：`client/src/components/ResumePreviewModal.tsx`、`client/src/components/views/ResumeManagerView.tsx`、`client/src/utils/resumeExport.ts`
+
+### 界面优化
+
+- **精简主页编辑器与公开联系方式展示**
+  - 摘要：将主题切换移入顶部工具栏，内容建议和隐私设置收纳到区块导航，扩大主页可编辑区域；公开主页联系方式改为名称与值对齐展示，不再重复显示姓名和生成说明。
+  - 涉及文件：`client/src/components/PortfolioRenderer.tsx`、`client/src/components/views/PreparationEditorView.tsx`、`client/src/components/portfolio.css`、`client/src/index.css`、`client/src/utils/portfolioContacts.ts`
+
+- **明确面试题替换与笔记边界**
+  - 摘要：将重新生成入口改为“换一批面试问题”，明确已收藏或已作答问题会保留，未保留问题可能被替换；反问面试官类问题使用独立的提问笔记文案。
+  - 涉及文件：`client/src/components/views/InterviewPreparationView.tsx`
+
+### 修复与质量
+
+- **兼容历史求职准备数据**
+  - 摘要：读取本地或云端求职准备时，自动恢复历史双重序列化的主页文档和内容建议；无法识别的建议安全降级为空列表，避免“继续编辑”进入空白页。
+  - 涉及文件：`client/src/services/preparations.ts`、`client/src/components/views/PreparationEditorView.tsx`
+
+### 测试与文档
+
+- **补充主页编辑、联系方式与历史数据回归验证**
+  - 摘要：增加可编辑文字、区块定位、公开联系方式布局、定制简历转换和历史 JSON 字符串数据的回归断言。
+  - 涉及文件：`client/tests/preparations.test.tsx`
+
+### 文档与规范
+
+- **记录本次 GitHub 提交范围**
+  - 摘要：按项目唯一更新日志格式记录求职主页编辑、定制简历与导出、面试准备文案及历史数据兼容的交付边界，不包含本地环境、依赖、构建产物和参考资料。
+  - 涉及文件：`CHANGELOG.md`
+
+## 修复求职准备读写失败误报（2026-09-19）
+
+### 修复与质量
+
+- **增强求职准备读写稳定性**
+  - 摘要：为本地 Express 的求职准备列表、详情、创建和草稿更新接口增加有限重试，仅处理 SQL 发出前发生的 Neon TLS 建连重置；响应阶段断线等结果不确定的错误仍直接返回，避免重复创建或重复更新。
+  - 涉及文件：`server/src/services/database.ts`、`server/src/routes/dataRoutes.ts`
+
+- **清除恢复成功后的过期错误提示**
+  - 摘要：求职准备列表重新加载时重置旧错误，编辑器在读取或自动保存恢复成功后清除对应的读写失败提示，同时保留草稿冲突及其他业务错误，避免页面数据正常时仍持续显示失败横幅。
+  - 涉及文件：`client/src/components/views/PreparationsView.tsx`、`client/src/components/views/PreparationEditorView.tsx`
+
+### 文档与规范
+
+- **记录本次 GitHub 提交范围**
+  - 摘要：按项目唯一更新日志格式记录 Neon 瞬时建连失败重试和前端错误提示恢复边界，不包含本地环境、依赖目录、构建产物或数据库中的运行数据。
+  - 涉及文件：`CHANGELOG.md`
+
+## v1.0.0 新增我的求职准备与在线求职主页（2026-09-13）
+
+### 产品功能
+
+- **新增求职准备导航与两种创建流程**
+  - 摘要：保留“我的岗位投递”和“简历与能力库”，新增“我的求职准备”；支持从完整岗位分析快照创建针对岗位项目，或按求职方向与已有/新上传 PDF 简历创建通用主页；通用主页上传不改写默认简历，不完整 radar-v2 记录需重新分析。
+  - 涉及文件：`client/package.json`、`client/package-lock.json`、`client/src/main.tsx`、`client/src/App.tsx`、`client/src/components/Sidebar.tsx`、`client/src/components/views/AnalyzeView.tsx`、`client/src/components/views/PreparationsView.tsx`、`client/src/components/views/NewPreparationView.tsx`、`client/src/services/api.ts`、`client/src/services/preparations.ts`、`client/src/types/index.ts`、`client/src/utils/storage.ts`
+
+- **新增结构化主页编辑、局部完善与四套主题**
+  - 摘要：实现个人定位、优势、项目、经历、技能、教育和联系区块的结构化编辑、排序、隐藏与实时预览；差距建议和局部优化只生成带内容哈希的差异提案，用户确认后才应用，并可选同步真实事实到能力库；提供清爽专业、产品主页、创意作品集和企业科技四套响应式主题。
+  - 涉及文件：`client/src/components/views/PreparationEditorView.tsx`、`client/src/components/views/PreparationPreviewView.tsx`、`client/src/components/PortfolioRenderer.tsx`、`client/src/components/portfolio.css`、`client/src/index.css`、`client/src/services/preparations.ts`、`server/src/services/deepseekService.ts`、`server/src/types/index.ts`
+
+- **新增公开发布快照与私人面试准备**
+  - 摘要：求职主页可使用稳定随机链接免登录分享，草稿变更需手动更新发布，下线后统一返回 404；公开快照只保留用户授权的联系方式和主页内容，不读取岗位分析、内部来源或面试数据；面试准备独立生成五类问题，支持收藏、答题笔记和生成依据过期提醒。
+  - 涉及文件：`client/src/components/views/PublicPortfolioView.tsx`、`client/src/components/views/InterviewPreparationView.tsx`、`client/src/components/PortfolioRenderer.tsx`、`client/src/services/preparations.ts`、`api/preparation-ai.ts`、`api/public/[slug].ts`、`server/src/controllers/aiController.ts`、`server/src/routes/aiRoutes.ts`、`server/src/routes/publicRoutes.ts`、`server/src/index.ts`、`server/src/services/deepseekService.ts`、`vercel.json`
+
+- **新增求职准备、面试套件、发布快照和刷新会话存储**
+  - 摘要：新增求职准备草稿、面试套件、公开发布快照和刷新会话数据表，保留岗位与简历快照并在源记录删除后继续可用；Express 和 Vercel 共享数据契约，支持修订号并发控制、发布、下线和免登录读取。
+  - 涉及文件：`db/schema.sql`、`db/migrations/20260913_add_job_preparations.sql`、`api/_lib/data.ts`、`api/data/[...path].ts`、`server/src/routes/dataRoutes.ts`
+
+### 安全修复
+
+- **增加滚动刷新会话与公开数据隔离**
+  - 摘要：访问令牌调整为 15 分钟，通过 HttpOnly、SameSite=Lax 刷新 Cookie 滚动续期 30 天并限制单次会话最长 90 天；客户端合并并发 401 刷新并恢复原私有路由，公开主页完全绕过登录恢复；发布时过滤未授权联系方式和内部来源，并限制外链协议、文档结构与内容长度。
+  - 涉及文件：`api/_lib/auth.ts`、`api/auth/[action].ts`、`api/data/[...path].ts`、`api/preparation-ai.ts`、`client/src/services/http.ts`、`client/src/services/api.ts`、`client/src/App.tsx`、`server/src/services/authService.ts`、`server/src/routes/authRoutes.ts`、`server/src/controllers/aiController.ts`、`server/src/services/portfolioValidation.ts`
+
+### 修复与质量
+
+- **增加草稿自动保存、本地恢复与冲突保护**
+  - 摘要：编辑内容立即写入按账号和项目隔离的本地恢复缓存，停止输入 800ms 后写入云端；使用 revision 防止静默覆盖，冲突时可选云端或本机版本，AI、预览、面试与发布操作会等待草稿保存，退出登录前也会刷新待写入内容。
+  - 涉及文件：`client/src/components/views/PreparationEditorView.tsx`、`client/src/services/preparations.ts`、`client/src/App.tsx`、`api/data/[...path].ts`、`server/src/routes/dataRoutes.ts`
+
+### 测试与文档
+
+- **补充求职主页渲染、数据校验与部署说明**
+  - 摘要：增加四套主题、隐藏区块、私密联系方式、本地草稿修订和服务端 Portfolio/面试数据校验测试，并补充上线前必须执行的数据库迁移说明。
+  - 涉及文件：`client/tests/preparations.test.tsx`、`client/tests/run-storage-tests.mjs`、`server/src/services/portfolioValidation.test.ts`、`server/package.json`、`docs/部署说明/DEPLOY.md`
+
+### 文档与规范
+
+- **记录本次 GitHub 提交范围**
+  - 摘要：按项目唯一更新日志格式记录求职准备、在线主页、面试准备、登录会话、安全校验、测试和部署说明的交付边界，不包含依赖目录、构建产物或本地环境文件。
+  - 涉及文件：`CHANGELOG.md`
+
+## 岗位分析支持切换简历与结果复用（2026-09-12）
+
+### 产品功能
+
+- **岗位分析重新选择简历**
+  - 摘要：在岗位分析结果页支持弹窗选择原始简历或定制简历，并标注本岗位当前使用的简历；选择相同简历版本时直接复用已有分析结果，选择不同简历或已更新版本时重新调用 AI 分析，失败时保留原结果。
+  - 涉及文件：`client/src/components/views/AnalyzeView.tsx`
+
+### 界面优化
+
+- **明确简历类型与当前使用状态**
+  - 摘要：在重新分析选择器中区分原始简历、定制简历、默认简历和本岗位当前使用的简历，避免切换岗位分析输入时误改系统默认简历。
+  - 涉及文件：`client/src/components/views/AnalyzeView.tsx`
+
+### 测试与文档
+
+- **补充简历版本复用测试并更新开发计划**
+  - 摘要：增加相同简历版本复用、版本变化重新分析的判断测试，并记录五阶段验收完成状态及新增需求的开发与人工验收边界。
+  - 涉及文件：`client/tests/analysis-render.test.tsx`、`docs/开发文档/开发计划/JOB_MATCHING_REFACTOR_PLAN.md`
+
+### 文档与规范
+
+- **记录本次 GitHub 提交范围**
+  - 摘要：按项目唯一更新日志格式记录岗位分析简历切换、结果复用、测试和计划更新的交付边界。
+  - 涉及文件：`CHANGELOG.md`
+
 ## 岗位匹配分数计算方式加强（2026-09-12）
 
 ### 产品功能

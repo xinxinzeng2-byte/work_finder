@@ -57,12 +57,32 @@
       "destination": "/api/generate"
     },
     {
+      "source": "/api/ai/preparations/:id/generate",
+      "destination": "/api/preparation-ai?action=generate&id=:id"
+    },
+    {
+      "source": "/api/ai/preparations/:id/blocks/:blockId/optimize",
+      "destination": "/api/preparation-ai?action=optimize&id=:id&blockId=:blockId"
+    },
+    {
+      "source": "/api/ai/preparations/:id/suggestions/:suggestionId/propose",
+      "destination": "/api/preparation-ai?action=suggest&id=:id&suggestionId=:suggestionId"
+    },
+    {
+      "source": "/api/ai/preparations/:id/interview/generate",
+      "destination": "/api/preparation-ai?action=interview&id=:id"
+    },
+    {
       "source": "/api/auth/:action",
       "destination": "/api/auth/[action]"
     },
     {
       "source": "/api/data/:path*",
       "destination": "/api/data/[...path]"
+    },
+    {
+      "source": "/api/public/portfolios/:slug",
+      "destination": "/api/public/[slug]"
     },
     {
       "source": "/(.*)",

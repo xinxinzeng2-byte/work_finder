@@ -82,4 +82,31 @@ export function mapJob(row: Record<string, unknown>) {
   };
 }
 
+export function mapPreparation(row: Record<string, unknown>) {
+  return {
+    id: row.id,
+    mode: row.mode,
+    name: row.name,
+    careerDirection: row.career_direction,
+    sourceJobId: row.source_job_id || undefined,
+    sourceResumeId: row.source_resume_id || undefined,
+    sourceResumeVersion: row.source_resume_version || undefined,
+    sourceResumeSnapshot: row.source_resume_snapshot,
+    jobSnapshot: row.job_snapshot || undefined,
+    matchResultSnapshot: row.match_result_snapshot || undefined,
+    document: row.document,
+    documentSchemaVersion: row.document_schema_version || 1,
+    contentSuggestions: row.content_suggestions || [],
+    themeId: row.theme_id,
+    themeConfig: row.theme_config || {},
+    status: row.status,
+    revision: row.revision || 1,
+    publicSlug: row.public_slug || undefined,
+    publicStatus: row.public_status || undefined,
+    publishedAt: row.published_at || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 export { sql };

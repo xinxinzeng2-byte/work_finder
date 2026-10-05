@@ -1,15 +1,117 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import crypto from 'crypto';
 import { allowMethods, bodyObject } from '../_lib/http';
-import { currentUser, jsonValue, mapJob, mapResume, requireId, sql } from '../_lib/data';
+import { currentUser, jsonValue, mapJob, mapPreparation, mapResume, requireId, sql } from '../_lib/data';
+import { validateInterviewQuestions, validatePortfolioDocument, validateThemeId } from '../../server/src/services/portfolioValidation';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'private, no-store, max-age=0, must-revalidate');
   const parts = Array.isArray(req.query.path) ? req.query.path : typeof req.query.path === 'string' ? req.query.path.split('/') : [];
-  const [resource, id] = parts;
+  const [resource, id, action] = parts;
   if (resource === 'draft') return draft(req, res);
   if (resource === 'resumes') return id ? resumeItem(req, res, id) : resumes(req, res);
   if (resource === 'jobs') return id ? jobItem(req, res, id) : jobs(req, res);
+  if (resource === 'preparations') {
+    if (!id) return preparations(req, res);
+    if (action === 'interview') return interview(req, res, id);
+    if (action === 'publish') return publish(req, res, id);
+    if (action === 'unpublish') return unpublish(req, res, id);
+    return preparationItem(req, res, id);
+  }
   res.status(404).json({ error: '数据接口不存在' });
+}
+
+async function preparations(req: VercelRequest, res: VercelResponse) {
+  if (!allowMethods(req, res, ['GET', 'POST'])) return;
+  const userId = await currentUser(req, res); if (!userId) return;
+  try {
+    if (req.method === 'GET') {
+      const rows = await sql`SELECT p.*,pub.slug AS public_slug,pub.status AS public_status,pub.published_at FROM job_preparations p LEFT JOIN published_portfolios pub ON pub.preparation_id=p.id WHERE p.user_id=${userId} ORDER BY p.updated_at DESC`;
+      res.status(200).json({ preparations: rows.map((row: Record<string, unknown>) => mapPreparation(row)) }); return;
+    }
+    const body = bodyObject(req);
+    if (!['targeted','general'].includes(String(body.mode)) || typeof body.name !== 'string' || typeof body.careerDirection !== 'string' || !body.sourceResumeSnapshot || !body.document) {
+      res.status(400).json({ error: '求职准备数据不完整' }); return;
+    }
+    let document;let themeId;try{document=validatePortfolioDocument(body.document);themeId=validateThemeId(body.themeId||'clean-professional');}catch(error){res.status(400).json({error:error instanceof Error?error.message:'求职主页数据无效'});return;}
+    const sourceJobId = typeof body.sourceJobId === 'string' && /^[0-9a-f-]{36}$/i.test(body.sourceJobId) ? body.sourceJobId : null;
+    const sourceResumeId = typeof body.sourceResumeId === 'string' && /^[0-9a-f-]{36}$/i.test(body.sourceResumeId) ? body.sourceResumeId : null;
+    const [row] = await sql`INSERT INTO job_preparations (user_id,mode,name,career_direction,source_job_id,source_resume_id,source_resume_version,source_resume_snapshot,job_snapshot,match_result_snapshot,document,content_suggestions,theme_id,theme_config,status) VALUES (${userId},${body.mode},${body.name.trim()},${body.careerDirection.trim()},${sourceJobId},${sourceResumeId},${typeof body.sourceResumeVersion === 'number' ? Math.floor(body.sourceResumeVersion) : null},${jsonValue(body.sourceResumeSnapshot,{})}::jsonb,${body.jobSnapshot ? jsonValue(body.jobSnapshot,{}) : null}::jsonb,${body.matchResultSnapshot ? jsonValue(body.matchResultSnapshot,{}) : null}::jsonb,${jsonValue(document,{})}::jsonb,${jsonValue(body.contentSuggestions,[])}::jsonb,${themeId},${jsonValue(body.themeConfig,{})}::jsonb,'draft') RETURNING *`;
+    res.status(201).json({ preparation: mapPreparation(row) });
+  } catch (error) { console.error('[Preparation create/list]', error); res.status(500).json({ error: '保存求职准备失败' }); }
+}
+
+async function preparationItem(req: VercelRequest, res: VercelResponse, id: string) {
+  req.query.id = id; if (!allowMethods(req, res, ['GET','PATCH','DELETE'])) return;
+  const identity = requireId(req, res); if (!identity) return;
+  try {
+    if (req.method === 'GET') {
+      const [row] = await sql`SELECT p.*,pub.slug AS public_slug,pub.status AS public_status,pub.published_at FROM job_preparations p LEFT JOIN published_portfolios pub ON pub.preparation_id=p.id WHERE p.id=${identity.id} AND p.user_id=${identity.userId}`;
+      if (!row) { res.status(404).json({ error: '求职准备不存在' }); return; }
+      res.status(200).json({ preparation: mapPreparation(row) }); return;
+    }
+    if (req.method === 'DELETE') { await sql`DELETE FROM job_preparations WHERE id=${identity.id} AND user_id=${identity.userId}`; res.status(204).end(); return; }
+    const body = bodyObject(req);
+    if (typeof body.baseRevision !== 'number') { res.status(400).json({ error: '缺少草稿版本' }); return; }
+    let document:string|null=null;let themeId:string|null=null;try{if(body.document)document=jsonValue(validatePortfolioDocument(body.document),{});if(body.themeId!==undefined)themeId=validateThemeId(body.themeId);}catch(error){res.status(400).json({error:error instanceof Error?error.message:'求职主页数据无效'});return;}
+    const [row] = await sql`UPDATE job_preparations SET name=COALESCE(${typeof body.name === 'string' ? body.name.trim() : null},name),career_direction=COALESCE(${typeof body.careerDirection === 'string' ? body.careerDirection.trim() : null},career_direction),document=COALESCE(${document}::jsonb,document),content_suggestions=COALESCE(${body.contentSuggestions ? jsonValue(body.contentSuggestions,[]) : null}::jsonb,content_suggestions),theme_id=COALESCE(${themeId},theme_id),theme_config=COALESCE(${body.themeConfig ? jsonValue(body.themeConfig,{}) : null}::jsonb,theme_config),status=COALESCE(${typeof body.status === 'string' ? body.status : null},status),revision=revision+1,updated_at=now() WHERE id=${identity.id} AND user_id=${identity.userId} AND revision=${Math.floor(body.baseRevision)} RETURNING *`;
+    if (!row) { res.status(409).json({ error: '草稿已在其他页面更新，请选择要保留的版本' }); return; }
+    res.status(200).json({ preparation: mapPreparation(row) });
+  } catch (error) { console.error('[Preparation item]', error); res.status(500).json({ error: '操作求职准备失败' }); }
+}
+
+async function interview(req: VercelRequest, res: VercelResponse, id: string) {
+  req.query.id=id; if (!allowMethods(req,res,['GET','PUT'])) return; const identity=requireId(req,res); if(!identity)return;
+  try {
+    const [owned]=await sql`SELECT id FROM job_preparations WHERE id=${identity.id} AND user_id=${identity.userId}`;
+    if(!owned){res.status(404).json({error:'求职准备不存在'});return;}
+    if(req.method==='GET'){
+      const [row]=await sql`SELECT * FROM interview_kits WHERE preparation_id=${identity.id} AND user_id=${identity.userId}`;
+      res.status(200).json({interviewKit:row?{preparationId:row.preparation_id,questions:row.questions||[],generationBasisHash:row.generation_basis_hash,createdAt:row.created_at,updatedAt:row.updated_at}:null});return;
+    }
+    const body=bodyObject(req);let questions;try{questions=validateInterviewQuestions(body.questions||[]);}catch(error){res.status(400).json({error:error instanceof Error?error.message:'面试问题数据无效'});return;}const [row]=await sql`INSERT INTO interview_kits (preparation_id,user_id,questions,generation_basis_hash) VALUES (${identity.id},${identity.userId},${jsonValue(questions,[])}::jsonb,${typeof body.generationBasisHash==='string'?body.generationBasisHash.slice(0,200):''}) ON CONFLICT (preparation_id) DO UPDATE SET questions=EXCLUDED.questions,generation_basis_hash=EXCLUDED.generation_basis_hash,updated_at=now() WHERE interview_kits.user_id=${identity.userId} RETURNING *`;
+    res.status(200).json({interviewKit:{preparationId:row.preparation_id,questions:row.questions||[],generationBasisHash:row.generation_basis_hash,createdAt:row.created_at,updatedAt:row.updated_at}});
+  } catch(error){console.error('[Interview kit]',error);res.status(500).json({error:'保存面试准备失败'});}
+}
+
+const slugAlphabet='23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+function makeSlug(){return Array.from(crypto.randomBytes(16),byte=>slugAlphabet[byte%slugAlphabet.length]).join('');}
+function safeUrl(value:unknown){if(typeof value!=='string'||!(/^(https?:\/\/|mailto:|tel:)/i.test(value)))return '';try{const url=new URL(value);return ['http:','https:','mailto:','tel:'].includes(url.protocol)?value:'';}catch{return '';}}
+function stripSourceReferences(value:any):any{
+  if(Array.isArray(value))return value.map(stripSourceReferences);
+  if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([key])=>!['sourceId','sourceRefs','sourceReference'].includes(key)).map(([key,item])=>[key,stripSourceReferences(item)]));
+  return value;
+}
+function publicDocument(value:any){
+  const document=stripSourceReferences(JSON.parse(JSON.stringify(value||{})));
+  document.contacts=Array.isArray(document.contacts)?document.contacts.filter((item:any)=>{if(item?.public!==true||typeof item.value!=='string'||!item.value.trim())return false;if(['website','github','linkedin'].includes(item.kind))return /^https?:\/\//i.test(item.value);if(item.kind==='email')return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(item.value);return true;}).map((item:any)=>({...item,value:String(item.value||'')})):[];
+  if(document.primaryAction?.href) document.primaryAction.href=safeUrl(document.primaryAction.href);
+  if(document.primaryAction?.contactId&&!document.contacts.some((item:any)=>item.id===document.primaryAction.contactId)) document.primaryAction={label:'联系我'};
+  return document;
+}
+
+async function publish(req:VercelRequest,res:VercelResponse,id:string){
+  if(!allowMethods(req,res,['POST']))return; req.query.id=id; const identity=requireId(req,res);if(!identity)return;
+  try{
+    const [prep]=await sql`SELECT * FROM job_preparations WHERE id=${identity.id} AND user_id=${identity.userId}`;
+    if(!prep){res.status(404).json({error:'求职准备不存在'});return;}
+    const document=publicDocument(prep.document);
+    const action=document.primaryAction||{};
+    if(!document.contacts.length&&!safeUrl(action.href)){res.status(400).json({error:'发布前请至少公开一种联系方式或配置一个有效行动按钮'});return;}
+    const [existing]=await sql`SELECT slug FROM published_portfolios WHERE preparation_id=${identity.id}`;
+    let slug=existing?.slug;
+    for(let attempts=0;!slug&&attempts<5;attempts+=1){const candidate=makeSlug();const rows=await sql`SELECT slug FROM published_portfolios WHERE slug=${candidate}`;if(!rows.length)slug=candidate;}
+    if(!slug)throw new Error('无法生成公开链接');
+    const [row]=await sql`INSERT INTO published_portfolios (preparation_id,user_id,slug,published_document,theme_id,theme_config,status,noindex) VALUES (${identity.id},${identity.userId},${slug},${jsonValue(document,{})}::jsonb,${prep.theme_id},${jsonValue(prep.theme_config,{})}::jsonb,'published',true) ON CONFLICT (preparation_id) DO UPDATE SET published_document=EXCLUDED.published_document,theme_id=EXCLUDED.theme_id,theme_config=EXCLUDED.theme_config,status='published',published_at=now(),updated_at=now() RETURNING *`;
+    await sql`UPDATE job_preparations SET status='published',updated_at=now() WHERE id=${identity.id}`;
+    res.status(200).json({slug:row.slug,status:row.status,publishedAt:row.published_at});
+  }catch(error){console.error('[Publish portfolio]',error);res.status(500).json({error:'发布失败，请重试'});}
+}
+
+async function unpublish(req:VercelRequest,res:VercelResponse,id:string){
+  if(!allowMethods(req,res,['POST']))return;req.query.id=id;const identity=requireId(req,res);if(!identity)return;
+  try{await sql`UPDATE published_portfolios SET status='unpublished',updated_at=now() WHERE preparation_id=${identity.id} AND user_id=${identity.userId}`;await sql`UPDATE job_preparations SET status='draft',updated_at=now() WHERE id=${identity.id} AND user_id=${identity.userId}`;res.status(204).end();}
+  catch{res.status(500).json({error:'下线失败，请重试'});}
 }
 
 async function resumes(req: VercelRequest, res: VercelResponse) {

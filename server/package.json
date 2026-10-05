@@ -8,6 +8,7 @@
     "build": "tsc",
     "test:scoring": "ts-node src/services/capabilityScoring.test.ts && ts-node src/services/capabilityScoring.baseline.test.ts && ts-node src/services/capabilityScoringV2.test.ts",
     "test:match-v2": "ts-node src/services/deepseekClient.test.ts && ts-node src/services/matchAnalysisV2.test.ts",
+    "test:portfolio": "ts-node src/services/portfolioValidation.test.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {

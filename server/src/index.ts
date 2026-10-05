@@ -5,6 +5,7 @@ import { getSql } from './services/database';
 import aiRoutes from './routes/aiRoutes';
 import authRoutes from './routes/authRoutes';
 import dataRoutes from './routes/dataRoutes';
+import publicRoutes from './routes/publicRoutes';
 
 dotenv.config();
 
@@ -49,6 +50,7 @@ app.get('/health/db', async (_req, res) => {
 app.use('/api/ai', aiRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/data', dataRoutes);
+app.use('/api/public', publicRoutes);
 
 // 错误处理中间件
 app.use(

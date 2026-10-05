@@ -47,6 +47,22 @@ export function downloadResumeHtml(item: ResumeItem): void {
   URL.revokeObjectURL(url);
 }
 
+export function downloadResumePdf(item: ResumeItem): void {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    window.alert('浏览器阻止了 PDF 导出窗口，请允许弹出窗口后重试。');
+    return;
+  }
+  const printableHtml = resumeToHtml(item).replace('</style>', '@page{size:A4;margin:12mm}@media print{body{background:#fff}main{width:auto;max-width:none;margin:0;padding:0;box-shadow:none}}</style>');
+  printWindow.opener = null;
+  printWindow.document.open();
+  printWindow.document.write(printableHtml);
+  printWindow.document.close();
+  const openPrintDialog = () => { printWindow.focus(); printWindow.print(); };
+  if (printWindow.document.readyState === 'complete') window.setTimeout(openPrintDialog, 100);
+  else printWindow.addEventListener('load', openPrintDialog, { once: true });
+}
+
 export async function downloadResume(item: ResumeItem): Promise<void> {
   if (!item.sourceFileData) {
     if (item.type === 'original' && item.fileName) {
