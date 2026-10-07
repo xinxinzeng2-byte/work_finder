@@ -2,7 +2,7 @@ import React from 'react';
 import assert from 'node:assert/strict';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {PortfolioRenderer} from '../src/components/PortfolioRenderer';
-import {buildSuggestions,createPreparation,emptyPortfolio,getPreparation,themeNames,updatePreparation} from '../src/services/preparations';
+import {buildSuggestions,createPreparation,emptyPortfolio,getInterviewKit,getPreparation,themeNames,updatePreparation} from '../src/services/preparations';
 import {contactKindLabels} from '../src/utils/portfolioContacts';
 import {preparationToCustomizedResume} from '../src/utils/preparationResume';
 
@@ -44,5 +44,9 @@ assert.equal(legacy.document.identity.name,'测试用户','历史双重序列化
 assert.deepEqual(legacy.contentSuggestions,[],'异常的历史内容建议不应让编辑器崩溃');
 assert.equal(buildSuggestions().length,2);
 assert.deepEqual(contactKindLabels,{email:'邮箱',phone:'电话',website:'个人网站',github:'GitHub',linkedin:'LinkedIn',wechat:'微信',custom:'自定义'});
+memory.set('wf_interview_kits',JSON.stringify([{preparationId:'legacy-preparation',questions:[{id:'valid',category:'role',question:'请介绍你自己',starred:false},{id:'invalid',category:'unknown',question:'异常问题'}]}]));
+const legacyKit=await getInterviewKit('legacy-preparation');
+assert.equal(legacyKit?.questions.length,1,'异常的历史面试问题不应让页面崩溃');
+assert.equal(legacyKit?.questions[0].answerNote,'','历史问题缺少答题笔记时应补为空文本');
 
 console.log('client preparation and theme tests passed');

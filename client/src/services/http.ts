@@ -1,8 +1,27 @@
 let refreshPromise: Promise<boolean> | null = null;
+const AUTH_REQUEST_TIMEOUT_MS = 12_000;
+
+export async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = AUTH_REQUEST_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const abortFromCaller = () => controller.abort();
+  if (init.signal?.aborted) controller.abort();
+  else init.signal?.addEventListener('abort', abortFromCaller, { once: true });
+  const timeoutId = window.setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (timedOut) throw new Error('服务器响应超时，请检查本地后端是否已启动');
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+    init.signal?.removeEventListener('abort', abortFromCaller);
+  }
+}
 
 async function refreshAccessToken(): Promise<boolean> {
   if (refreshPromise) return refreshPromise;
-  refreshPromise = fetch('/api/auth/refresh', {
+  refreshPromise = fetchWithTimeout('/api/auth/refresh', {
     method: 'POST',
     credentials: 'include',
     cache: 'no-store',
