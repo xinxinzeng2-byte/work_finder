@@ -13,6 +13,33 @@ export async function flushPreparationWrites():Promise<void>{while(pendingWrites
 function localItems():JobPreparation[]{try{return JSON.parse(localStorage.getItem(LOCAL_KEY)||'[]');}catch{return[];}}
 function saveLocal(items:JobPreparation[]){localStorage.setItem(LOCAL_KEY,JSON.stringify(items));}
 function parseStoredJson(value:unknown):unknown{if(typeof value!=='string')return value;try{return JSON.parse(value);}catch{return undefined;}}
+const interviewCategories=new Set<InterviewQuestion['category']>(['role','experience','gap','scenario','reverse']);
+function normalizeInterviewQuestions(value:unknown):InterviewQuestion[]{
+  const parsed=parseStoredJson(value);
+  if(!Array.isArray(parsed))return[];
+  return parsed.flatMap((raw,index)=>{
+    if(!raw||typeof raw!=='object'||Array.isArray(raw))return[];
+    const question=raw as Record<string,unknown>;
+    if(typeof question.category!=='string'||!interviewCategories.has(question.category as InterviewQuestion['category']))return[];
+    const content=typeof question.question==='string'?question.question.trim():'';
+    if(!content)return[];
+    return [{
+      id:typeof question.id==='string'&&question.id.trim()?question.id:`question_${index+1}`,
+      category:question.category as InterviewQuestion['category'],
+      question:content,
+      rationale:typeof question.rationale==='string'?question.rationale:'',
+      relatedSource:typeof question.relatedSource==='string'&&question.relatedSource.trim()?question.relatedSource:undefined,
+      starred:question.starred===true,
+      answerNote:typeof question.answerNote==='string'?question.answerNote:'',
+    }];
+  });
+}
+function normalizeInterviewKit(value:unknown,preparationId:string):InterviewKit|null{
+  const parsed=parseStoredJson(value);
+  if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))return null;
+  const kit=parsed as Record<string,unknown>;
+  return{preparationId:typeof kit.preparationId==='string'?kit.preparationId:preparationId,questions:normalizeInterviewQuestions(kit.questions),generationBasisHash:typeof kit.generationBasisHash==='string'?kit.generationBasisHash:'',createdAt:typeof kit.createdAt==='string'?kit.createdAt:undefined,updatedAt:typeof kit.updatedAt==='string'?kit.updatedAt:undefined};
+}
 function normalizePreparation(item:JobPreparation):JobPreparation{
   const stored=item as JobPreparation&{document?:unknown;contentSuggestions?:unknown};
   const parsedDocument=parseStoredJson(stored.document);
@@ -52,10 +79,10 @@ function aiHeaders():Record<string,string>{const key=isCloudApiKeyMode?null:getA
 export async function generatePortfolio(id:string,payload:{resume:unknown;direction:string;jobDescription?:unknown;matchResult?:unknown}):Promise<PortfolioDocument>{return(await jsonRequest<{document:PortfolioDocument}>(`/api/ai/preparations/${id}/generate`,{method:'POST',headers:aiHeaders(),body:JSON.stringify(payload)})).document;}
 export async function optimizeBlock(preparation:JobPreparation,block:PortfolioBlock,instruction:string){return jsonRequest<{data:Record<string,unknown>;explanation:string}>(`/api/ai/preparations/${preparation.id}/blocks/${block.id}/optimize`,{method:'POST',headers:aiHeaders(),body:JSON.stringify({block,direction:preparation.careerDirection,instruction,resume:preparation.sourceResumeSnapshot})});}
 export async function polishSuggestion(preparation:JobPreparation,suggestion:ContentSuggestion,userFacts:string){return jsonRequest<{text:string}>(`/api/ai/preparations/${preparation.id}/suggestions/${suggestion.id}/propose`,{method:'POST',headers:aiHeaders(),body:JSON.stringify({direction:preparation.careerDirection,suggestion:`${suggestion.title}：${suggestion.detail}`,userFacts})});}
-export async function generateInterview(preparation:JobPreparation):Promise<InterviewQuestion[]>{return(await jsonRequest<{questions:InterviewQuestion[]}>(`/api/ai/preparations/${preparation.id}/interview/generate`,{method:'POST',headers:aiHeaders(),body:JSON.stringify({direction:preparation.careerDirection,document:preparation.document,jobDescription:preparation.jobSnapshot,matchResult:preparation.matchResultSnapshot})})).questions;}
+export async function generateInterview(preparation:JobPreparation):Promise<InterviewQuestion[]>{const response=await jsonRequest<{questions:unknown}>(`/api/ai/preparations/${preparation.id}/interview/generate`,{method:'POST',headers:aiHeaders(),body:JSON.stringify({direction:preparation.careerDirection,document:preparation.document,jobDescription:preparation.jobSnapshot,matchResult:preparation.matchResultSnapshot})});const questions=normalizeInterviewQuestions(response.questions);if(!questions.length)throw new Error('AI 未返回有效的面试问题，请重试');return questions;}
 
-function localKits():InterviewKit[]{try{return JSON.parse(localStorage.getItem(LOCAL_INTERVIEW_KEY)||'[]');}catch{return[];}}
-export async function getInterviewKit(id:string):Promise<InterviewKit|null>{if(!isCloudMode)return localKits().find(item=>item.preparationId===id)||null;return(await jsonRequest<{interviewKit:InterviewKit|null}>(`/api/data/preparations/${id}/interview`)).interviewKit;}
-export async function saveInterviewKit(kit:InterviewKit):Promise<InterviewKit>{if(isCloudMode)return(await jsonRequest<{interviewKit:InterviewKit}>(`/api/data/preparations/${kit.preparationId}/interview`,{method:'PUT',body:JSON.stringify(kit)})).interviewKit;const now=new Date().toISOString();const next={...kit,updatedAt:now,createdAt:kit.createdAt||now};const kits=localKits();const index=kits.findIndex(item=>item.preparationId===kit.preparationId);if(index>=0)kits[index]=next;else kits.push(next);localStorage.setItem(LOCAL_INTERVIEW_KEY,JSON.stringify(kits));return next;}
+function localKits():unknown[]{try{const parsed=JSON.parse(localStorage.getItem(LOCAL_INTERVIEW_KEY)||'[]');return Array.isArray(parsed)?parsed:[];}catch{return[];}}
+export async function getInterviewKit(id:string):Promise<InterviewKit|null>{if(!isCloudMode){const stored=localKits().find(item=>Boolean(item)&&typeof item==='object'&&(item as Record<string,unknown>).preparationId===id);return normalizeInterviewKit(stored,id);}const response=await jsonRequest<{interviewKit:unknown}>(`/api/data/preparations/${id}/interview`);return normalizeInterviewKit(response.interviewKit,id);}
+export async function saveInterviewKit(kit:InterviewKit):Promise<InterviewKit>{if(isCloudMode){const response=await jsonRequest<{interviewKit:unknown}>(`/api/data/preparations/${kit.preparationId}/interview`,{method:'PUT',body:JSON.stringify(kit)});const saved=normalizeInterviewKit(response.interviewKit,kit.preparationId);if(!saved)throw new Error('云端返回的面试问题数据无效');return saved;}const now=new Date().toISOString();const next={...kit,questions:normalizeInterviewQuestions(kit.questions),updatedAt:now,createdAt:kit.createdAt||now};const kits=localKits();const index=kits.findIndex(item=>Boolean(item)&&typeof item==='object'&&(item as Record<string,unknown>).preparationId===kit.preparationId);if(index>=0)kits[index]=next;else kits.push(next);localStorage.setItem(LOCAL_INTERVIEW_KEY,JSON.stringify(kits));return next;}
 
 export const themeNames:Record<ThemeId,string>={'clean-professional':'清爽专业','product-home':'产品主页风','creative-portfolio':'创意作品集风','enterprise-tech':'企业科技风'};
