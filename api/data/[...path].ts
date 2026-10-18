@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { allowMethods, bodyObject } from '../_lib/http';
 import { currentUser, jsonValue, mapJob, mapPreparation, mapResume, requireId, sql } from '../_lib/data';
 import { validateInterviewQuestions, validatePortfolioDocument, validateThemeId } from '../../server/src/services/portfolioValidation';
+import { makePublicDocument, safePublicUrl } from '../../server/src/services/publicPortfolio';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'private, no-store, max-age=0, must-revalidate');
@@ -76,28 +77,14 @@ async function interview(req: VercelRequest, res: VercelResponse, id: string) {
 
 const slugAlphabet='23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 function makeSlug(){return Array.from(crypto.randomBytes(16),byte=>slugAlphabet[byte%slugAlphabet.length]).join('');}
-function safeUrl(value:unknown){if(typeof value!=='string'||!(/^(https?:\/\/|mailto:|tel:)/i.test(value)))return '';try{const url=new URL(value);return ['http:','https:','mailto:','tel:'].includes(url.protocol)?value:'';}catch{return '';}}
-function stripSourceReferences(value:any):any{
-  if(Array.isArray(value))return value.map(stripSourceReferences);
-  if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([key])=>!['sourceId','sourceRefs','sourceReference'].includes(key)).map(([key,item])=>[key,stripSourceReferences(item)]));
-  return value;
-}
-function publicDocument(value:any){
-  const document=stripSourceReferences(JSON.parse(JSON.stringify(value||{})));
-  document.contacts=Array.isArray(document.contacts)?document.contacts.filter((item:any)=>{if(item?.public!==true||typeof item.value!=='string'||!item.value.trim())return false;if(['website','github','linkedin'].includes(item.kind))return /^https?:\/\//i.test(item.value);if(item.kind==='email')return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(item.value);return true;}).map((item:any)=>({...item,value:String(item.value||'')})):[];
-  if(document.primaryAction?.href) document.primaryAction.href=safeUrl(document.primaryAction.href);
-  if(document.primaryAction?.contactId&&!document.contacts.some((item:any)=>item.id===document.primaryAction.contactId)) document.primaryAction={label:'联系我'};
-  return document;
-}
-
 async function publish(req:VercelRequest,res:VercelResponse,id:string){
   if(!allowMethods(req,res,['POST']))return; req.query.id=id; const identity=requireId(req,res);if(!identity)return;
   try{
     const [prep]=await sql`SELECT * FROM job_preparations WHERE id=${identity.id} AND user_id=${identity.userId}`;
     if(!prep){res.status(404).json({error:'求职准备不存在'});return;}
-    const document=publicDocument(prep.document);
+    const document=makePublicDocument(prep.document);
     const action=document.primaryAction||{};
-    if(!document.contacts.length&&!safeUrl(action.href)){res.status(400).json({error:'发布前请至少公开一种联系方式或配置一个有效行动按钮'});return;}
+    if(!document.contacts.length&&!safePublicUrl(action.href)){res.status(400).json({error:'发布前请至少公开一种联系方式或配置一个有效行动按钮'});return;}
     const [existing]=await sql`SELECT slug FROM published_portfolios WHERE preparation_id=${identity.id}`;
     let slug=existing?.slug;
     for(let attempts=0;!slug&&attempts<5;attempts+=1){const candidate=makeSlug();const rows=await sql`SELECT slug FROM published_portfolios WHERE slug=${candidate}`;if(!rows.length)slug=candidate;}

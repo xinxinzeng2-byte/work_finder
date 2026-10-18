@@ -58,6 +58,8 @@ export async function handleTestApiKey(req: Request, res: Response): Promise<voi
 
 // 解析简历
 export async function handleParseResume(req: Request, res: Response): Promise<void> {
+  const started = Date.now();
+  let stage = 'api-key';
   try {
     const apiKey = await getApiKey(req);
     if (!apiKey) {
@@ -75,7 +77,10 @@ export async function handleParseResume(req: Request, res: Response): Promise<vo
         res.status(400).json({ error: '请上传简历文件或粘贴简历文本' });
         return;
       }
+      stage = 'ai';
+      console.info('[Resume parse] AI started', { characters: text.trim().length });
       const result = await parseResume(apiKey, text.trim());
+      console.info('[Resume parse] completed', { elapsedMs: Date.now() - started });
       res.json(result);
       return;
     }
@@ -83,16 +88,21 @@ export async function handleParseResume(req: Request, res: Response): Promise<vo
     // 同时支持本地 multer 文件和前端 Base64 文件。
     const fileName = req.file?.originalname || encodedFileName || 'resume.pdf';
     const buffer = req.file?.buffer || Buffer.from(encodedFile!, 'base64');
+    stage = 'extract-text';
     const text = await extractTextFromBuffer(buffer, fileName);
+    console.info('[Resume parse] text extracted', { characters: text.length, elapsedMs: Date.now() - started });
 
     if (!text || text.trim().length < 10) {
       res.status(400).json({ error: '文件内容为空或无法提取文字（注意：暂不支持图片/扫描件）' });
       return;
     }
 
+    stage = 'ai';
     const result = await parseResume(apiKey, text, fileName);
+    console.info('[Resume parse] completed', { elapsedMs: Date.now() - started });
     res.json(result);
   } catch (error) {
+    console.warn('[Resume parse] failed', { stage, elapsedMs: Date.now() - started });
     res.status(500).json({
       error: `简历解析失败: ${error instanceof Error ? error.message : String(error)}`,
     });

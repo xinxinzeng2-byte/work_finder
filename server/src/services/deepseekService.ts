@@ -19,6 +19,7 @@ import { validatePortfolioBlockData, validatePortfolioDocument } from './portfol
 
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 const MODEL = 'deepseek-chat';
+const RESUME_MODEL = 'deepseek-flash';
 
 /**
  * 调用 DeepSeek API
@@ -26,35 +27,56 @@ const MODEL = 'deepseek-chat';
 async function callDeepSeek(
   apiKey: string,
   messages: DeepSeekMessage[],
-  options?: { temperature?: number; jsonMode?: boolean }
+  options?: { temperature?: number; jsonMode?: boolean; timeoutMs?: number; fastResume?: boolean; maxTokens?: number }
 ): Promise<string> {
-  const body: DeepSeekRequest = {
-    model: MODEL,
+  const body: DeepSeekRequest & { thinking?: { type: 'disabled' } } = {
+    model: options?.fastResume ? RESUME_MODEL : MODEL,
     messages,
     temperature: options?.temperature ?? 0.3,
-    max_tokens: 4096,
+    max_tokens: options?.maxTokens ?? 4096,
   };
+
+  if (options?.fastResume) body.thinking = { type: 'disabled' };
 
   if (options?.jsonMode) {
     body.response_format = { type: 'json_object' };
   }
 
-  const response = await fetch(DEEPSEEK_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
+  const controller = options?.timeoutMs ? new AbortController() : undefined;
+  const timeout = controller ? setTimeout(() => controller.abort(), options!.timeoutMs!) : undefined;
+  try {
+    const response = await fetch(DEEPSEEK_API_URL, {
+      method: 'POST',
+      signal: controller?.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`DeepSeek API 调用失败 (${response.status}): ${errorText}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`DeepSeek API 调用失败 (${response.status}): ${errorText}`);
+    }
+
+    const data = (await response.json()) as {
+      choices?: { finish_reason?: string; message?: { content?: string } }[];
+      usage?: { completion_tokens?: number };
+    };
+    const choice = data.choices?.[0];
+    if (options?.fastResume && choice?.finish_reason === 'length') {
+      throw new Error('简历解析输出超过长度上限，请按工作经历拆分文本后重试');
+    }
+    return choice?.message?.content || '';
+  } catch (error) {
+    if (controller?.signal.aborted) {
+      throw new Error(`AI 服务在 ${Math.round(options!.timeoutMs! / 1000)} 秒内未完成生成，可能正在拥堵或故障，请稍后重试`);
+    }
+    throw error;
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
-
-  const data = (await response.json()) as { choices?: { message?: { content?: string } }[] };
-  return data.choices?.[0]?.message?.content || '';
 }
 
 /**
@@ -86,7 +108,8 @@ export async function parseResume(
 2. 每个能力要标注来源（哪段经历证明了这个能力）
 3. 经历要提炼关键成就，用大白话描述，保留具体数字和事实
 4. 公司、职位、时间、数字等硬性事实必须如实保留，不得修改或编造
-5. 输出必须是合法 JSON`;
+5. 输出必须是合法 JSON
+6. evidence 用一句话标明依据，rawText 仅保留对应经历的关键原文，不要在多个字段中大段重复简历；必须保留全部工作/项目经历和关键事实`;
 
   const userPrompt = `请分析以下简历内容${fileName ? `（来自文件：${fileName}）` : ''}，拆解为原子能力和原子经历。
 
@@ -130,7 +153,7 @@ ${resumeText}
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ],
-    { temperature: 0.2, jsonMode: true }
+    { temperature: 0.2, jsonMode: true, timeoutMs: 90_000, fastResume: true }
   );
 
   try {
@@ -652,19 +675,11 @@ export async function generatePortfolioInterview(apiKey:string,direction:string,
  */
 export async function testApiKey(apiKey: string): Promise<boolean> {
   try {
-    const response = await fetch(DEEPSEEK_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [{ role: 'user', content: '你好' }],
-        max_tokens: 10,
-      }),
+    // 只有实际生成内容才算连接成功，HTTP 200 可能只是服务端排队保活。
+    const content = await callDeepSeek(apiKey, [{ role: 'user', content: '只回复 OK' }], {
+      fastResume: true, timeoutMs: 15_000, maxTokens: 8,
     });
-    return response.ok;
+    return content.trim().length > 0;
   } catch {
     return false;
   }

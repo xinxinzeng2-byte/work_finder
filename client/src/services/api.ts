@@ -56,33 +56,35 @@ export async function testApiKey(): Promise<boolean> {
   return data.valid;
 }
 
+/** 简历解析的总等待上限覆盖响应正文读取，避免一直停留在加载状态。 */
+async function requestResume(body: object): Promise<ParsedResume> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 100_000);
+  try {
+    const res = await authFetch(`${BASE_URL}/parse-resume`, {
+      method: 'POST',
+      headers: buildHeaders(),
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    return await handleResponse<ParsedResume>(res);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error('简历解析等待超时，请检查网络后重试，或改用粘贴文本');
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 /**
  * 解析简历（文件上传）
  */
 export async function parseResumeFile(file: File): Promise<ParsedResume> {
-  // 将文件转为 base64 发送
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        const res = await authFetch(`${BASE_URL}/parse-resume`, {
-          method: 'POST',
-          headers: buildHeaders(),
-          body: JSON.stringify({
-            file: {
-              data: (reader.result as string).split(',')[1], // 去掉 data:xxx;base64, 前缀
-              originalname: file.name,
-            },
-          }),
-        });
-        const result = await handleResponse<ParsedResume>(res);
-        resolve(result);
-      } catch (error) {
-        reject(error);
-      }
-    };
-    reader.onerror = () => reject(new Error('文件读取失败'));
-    reader.readAsDataURL(file);
+  const dataUrl = await readFileAsDataUrl(file);
+  return requestResume({
+    file: { data: dataUrl.split(',')[1], originalname: file.name },
   });
 }
 
@@ -100,12 +102,7 @@ export function readFileAsDataUrl(file: File): Promise<string> {
  * 解析简历（文本输入）
  */
 export async function parseResumeText(text: string): Promise<ParsedResume> {
-  const res = await authFetch(`${BASE_URL}/parse-resume`, {
-    method: 'POST',
-    headers: buildHeaders(),
-    body: JSON.stringify({ text }),
-  });
-  return handleResponse<ParsedResume>(res);
+  return requestResume({ text });
 }
 
 /**

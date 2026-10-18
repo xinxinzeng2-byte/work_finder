@@ -1,3 +1,7 @@
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import PortfolioRenderer from '../components/PortfolioRenderer';
+import portfolioCss from '../components/portfolio.css?inline';
 import type { ResumeItem } from './storage';
 
 const escapeHtml = (value: unknown): string => String(value ?? '')
@@ -12,6 +16,18 @@ const list = (items: string[]) => items.length
   : '';
 
 export function resumeToHtml(item: ResumeItem): string {
+  const portfolioDocument = item.targetJob?.portfolioDocument;
+  if (portfolioDocument) {
+    const markup = renderToStaticMarkup(React.createElement(PortfolioRenderer, {
+      document: portfolioDocument,
+      themeId: item.targetJob?.portfolioThemeId || 'clean-professional',
+    }));
+    return `<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${escapeHtml(item.name)}</title>
+<style>:root{color-scheme:light}html,body{margin:0;min-height:100%}${portfolioCss}</style></head>
+<body>${markup}</body></html>`;
+  }
   const { resume } = item;
   const info = [
     resume.basicInfo.phone,
@@ -48,19 +64,27 @@ export function downloadResumeHtml(item: ResumeItem): void {
 }
 
 export function downloadResumePdf(item: ResumeItem): void {
-  const printWindow = window.open('', '_blank');
-  if (!printWindow) {
-    window.alert('浏览器阻止了 PDF 导出窗口，请允许弹出窗口后重试。');
-    return;
-  }
-  const printableHtml = resumeToHtml(item).replace('</style>', '@page{size:A4;margin:12mm}@media print{body{background:#fff}main{width:auto;max-width:none;margin:0;padding:0;box-shadow:none}}</style>');
-  printWindow.opener = null;
-  printWindow.document.open();
-  printWindow.document.write(printableHtml);
-  printWindow.document.close();
-  const openPrintDialog = () => { printWindow.focus(); printWindow.print(); };
-  if (printWindow.document.readyState === 'complete') window.setTimeout(openPrintDialog, 100);
-  else printWindow.addEventListener('load', openPrintDialog, { once: true });
+  const printStyles = `@page{size:A4;margin:12mm}@media print{html,body{background:#fff!important}.portfolio{min-height:0}.pf-hero,.pf-body,.pf-footer{max-width:none}.pf-hero{padding-top:40px}.pf-section{break-inside:auto}.pf-advantages article,.pf-projects article,.pf-timeline article,.pf-skills article{break-inside:avoid}main:not(.portfolio){width:auto;max-width:none;margin:0;padding:0;box-shadow:none}}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}`;
+  const printableHtml = resumeToHtml(item).replace('</style>', `${printStyles}</style>`);
+  const frame = document.createElement('iframe');
+  frame.setAttribute('title', 'PDF 打印');
+  frame.style.position = 'fixed';
+  frame.style.right = '100%';
+  frame.style.bottom = '0';
+  frame.style.width = '1px';
+  frame.style.height = '1px';
+  frame.style.border = '0';
+  frame.style.opacity = '0';
+  const cleanup = () => { window.setTimeout(() => frame.remove(), 0); };
+  frame.onload = () => {
+    const target = frame.contentWindow;
+    if (!target) { cleanup(); window.alert('无法打开 PDF 打印窗口，请重试。'); return; }
+    target.addEventListener('afterprint', cleanup, { once: true });
+    window.setTimeout(() => { target.focus(); target.print(); }, 100);
+    window.setTimeout(cleanup, 60_000);
+  };
+  frame.srcdoc = printableHtml;
+  document.body.appendChild(frame);
 }
 
 export async function downloadResume(item: ResumeItem): Promise<void> {

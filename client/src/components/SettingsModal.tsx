@@ -262,7 +262,7 @@ export const SettingsModal: React.FC<Props> = ({ open, onClose }) => {
             <p className="mt-3 text-xs text-moss">API Key 有效，连接成功</p>
           )}
           {testResult === 'fail' && (
-            <p className="mt-3 text-xs text-terra">连接失败，请检查 Key 或账户余额</p>
+            <p className="mt-3 text-xs text-terra">连接失败，请检查 Key、账户余额或 AI 服务状态</p>
           )}
           {error && <p className="mt-3 text-xs text-terra">{error}</p>}
         </div>

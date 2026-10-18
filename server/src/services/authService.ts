@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import type { Response } from 'express';
-import { getSql } from './database';
+import { getSql, withDatabaseRetry } from './database';
 
 function getSecret(): string {
   const secret = process.env.JWT_SECRET;
@@ -37,23 +37,23 @@ const writeCookie = (res: Response, value: string, maxAge = 30 * 24 * 60 * 60) =
 
 export async function createRefreshSession(userId: string, res: Response): Promise<void> {
   const sql = getSql(); const value = crypto.randomBytes(32).toString('base64url'); const now = Date.now();
-  await sql`INSERT INTO auth_sessions (user_id,refresh_token_hash,expires_at,absolute_expires_at) VALUES (${userId},${hash(value)},${new Date(now + 30 * DAY).toISOString()},${new Date(now + 90 * DAY).toISOString()})`;
+  await withDatabaseRetry(() => sql`INSERT INTO auth_sessions (user_id,refresh_token_hash,expires_at,absolute_expires_at) VALUES (${userId},${hash(value)},${new Date(now + 30 * DAY).toISOString()},${new Date(now + 90 * DAY).toISOString()})`);
   writeCookie(res, value);
 }
 
 export async function rotateRefreshSession(req: Request, res: Response): Promise<{ id: string; email: string } | null> {
   const value = readCookie(req); if (!value) return null; const sql = getSql();
-  const [session] = await sql`SELECT s.id,s.user_id,s.absolute_expires_at,u.email FROM auth_sessions s JOIN users u ON u.id=s.user_id WHERE s.refresh_token_hash=${hash(value)} AND s.revoked_at IS NULL AND s.expires_at>now() AND s.absolute_expires_at>now()`;
+  const [session] = await withDatabaseRetry<any[]>(() => sql`SELECT s.id,s.user_id,s.absolute_expires_at,u.email FROM auth_sessions s JOIN users u ON u.id=s.user_id WHERE s.refresh_token_hash=${hash(value)} AND s.revoked_at IS NULL AND s.expires_at>now() AND s.absolute_expires_at>now()`);
   if (!session) return null;
   const rolling = new Date(Math.min(Date.now() + 30 * DAY, new Date(session.absolute_expires_at).getTime())).toISOString();
-  await sql`UPDATE auth_sessions SET expires_at=${rolling},last_used_at=now() WHERE id=${session.id}`;
+  await withDatabaseRetry(() => sql`UPDATE auth_sessions SET expires_at=${rolling},last_used_at=now() WHERE id=${session.id}`);
   writeCookie(res, value, Math.max(0, Math.floor((new Date(rolling).getTime() - Date.now()) / 1000)));
   return { id: session.user_id, email: session.email };
 }
 
 export async function revokeRefreshSession(req: Request, res: Response): Promise<void> {
   const value = readCookie(req); const sql = getSql();
-  if (value) await sql`UPDATE auth_sessions SET revoked_at=now() WHERE refresh_token_hash=${hash(value)}`;
+  if (value) await withDatabaseRetry(() => sql`UPDATE auth_sessions SET revoked_at=now() WHERE refresh_token_hash=${hash(value)}`);
   writeCookie(res, '', 0);
 }
 
