@@ -5,6 +5,8 @@ import {PortfolioRenderer} from '../src/components/PortfolioRenderer';
 import {buildSuggestions,createPreparation,emptyPortfolio,getInterviewKit,getPreparation,themeNames,updatePreparation} from '../src/services/preparations';
 import {contactKindLabels} from '../src/utils/portfolioContacts';
 import {preparationToCustomizedResume} from '../src/utils/preparationResume';
+import {resumeToHtml} from '../src/utils/resumeExport';
+import type {ResumeItem} from '../src/utils/storage';
 
 const memory=new Map<string,string>();
 Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(key:string)=>memory.get(key)??null,setItem:(key:string,value:string)=>{memory.set(key,value);},removeItem:(key:string)=>{memory.delete(key);}}});
@@ -27,6 +29,13 @@ assert.ok(wechatHtml.includes('pf-contact-grid'),'公开联系方式应使用两
 assert.ok(wechatHtml.includes('worker-finder'),'公开联系方式应同时显示名称和值');
 assert.ok(wechatHtml.includes('class="pf-footer"><div'),'联系方式页脚不应重复显示姓名');
 assert.ok(!wechatHtml.includes('由 AI 求职助手生成'),'联系方式页脚不应显示生成说明');
+
+const publishedResume:ResumeItem={id:'published-resume',name:'发布页简历',type:'customized',resume,uploadedAt:'2026-10-07T00:00:00.000Z',version:1,isCurrent:false,targetJob:{position:'产品经理',matchScore:80,portfolioDocument:document,portfolioThemeId:'product-home'}};
+const exportedHtml=resumeToHtml(publishedResume);
+assert.ok(exportedHtml.includes('theme-product-home'),'定制简历导出应保留发布页主题');
+assert.ok(exportedHtml.includes('pf-advantages'),'定制简历导出应复用发布页区块结构');
+assert.ok(exportedHtml.includes('.pf-hero'),'定制简历导出应内嵌发布页样式');
+assert.ok(!exportedHtml.includes('private@example.com'),'定制简历导出不得包含未公开联系方式');
 
 const created=await createPreparation({mode:'general',name:'测试主页',careerDirection:'产品经理',sourceResumeId:'resume-1',sourceResumeVersion:1,sourceResumeSnapshot:resume,document,documentSchemaVersion:1,contentSuggestions:buildSuggestions(),themeId:'clean-professional',themeConfig:{}});
 assert.equal(created.revision,1);

@@ -1,5 +1,37 @@
 # 更新日志
 
+## 完善简历预览导出并增强解析与登录稳定性（2026-10-18）
+
+### 产品功能
+
+- **保留原始简历文件与定制简历主题**
+  - 摘要：原始简历按源文件提供预览和下载，Word 或未保存源文件的历史记录显示对应提示；发布主页时保存文档与主题快照，定制简历预览及 HTML、PDF 导出复用主页样式，历史记录可从关联求职准备补齐展示，PDF 通过浏览器打印保存。
+  - 涉及文件：`client/src/components/ResumePreviewModal.tsx`、`client/src/components/views/ResumeManagerView.tsx`、`client/src/components/views/PreparationEditorView.tsx`、`client/src/utils/resumeExport.ts`、`client/src/utils/storage.ts`
+
+### 修复与质量
+
+- **兼容历史公开主页文档**
+  - 摘要：Express 与 Vercel 发布接口共用公开文档处理，兼容至多两层历史 JSON 字符串序列化，过滤未公开联系方式和内部来源引用，并校验行动按钮链接协议；无法识别的文档返回发布失败。
+  - 涉及文件：`api/data/[...path].ts`、`server/src/routes/dataRoutes.ts`、`server/src/services/publicPortfolio.ts`
+
+- **限制简历解析等待并校验 AI 实际响应**
+  - 摘要：简历解析改用 deepseek-flash 并关闭思考，减少重复原文输出；服务端与客户端分别设置 90 秒、100 秒等待上限，覆盖响应正文读取，输出截断时提示重试；连接测试要求实际生成内容并设置 15 秒上限，补充解析阶段耗时日志和前端提示。
+  - 涉及文件：`client/src/services/api.ts`、`client/src/components/SettingsModal.tsx`、`client/src/components/views/JobsWorkflowView.tsx`、`server/src/controllers/aiController.ts`、`server/src/services/deepseekService.ts`
+
+- **增强本地数据库代理与登录连接恢复**
+  - 摘要：Neon HTTPS 请求支持显式数据库代理及继承 HTTP 代理，为登录、注册和刷新会话增加超时及 TLS 建连失败有限重试，将可识别的数据库连接中断返回为 503；新增 undici 依赖以支持 HTTP CONNECT 代理，不对执行结果不确定的数据库写入进行重试。
+  - 涉及文件：`server/src/services/database.ts`、`server/src/services/authService.ts`、`server/src/routes/authRoutes.ts`、`server/package.json`、`server/package-lock.json`
+
+### 测试与文档
+
+- **补充导出、公开文档和解析回归验证**
+  - 摘要：覆盖定制简历主题与样式导出、私密联系方式过滤、快照恢复、历史公开文档与来源引用清理，以及解析模型参数、响应截断、请求和正文超时、连接测试结果；将公开文档测试纳入现有测试入口。
+  - 涉及文件：`client/tests/preparations.test.tsx`、`client/tests/storage.test.ts`、`server/src/services/publicPortfolio.test.ts`、`server/src/services/resumeParsing.test.ts`、`server/package.json`
+
+- **记录本次 GitHub 提交范围**
+  - 摘要：记录简历预览导出、公开主页兼容、解析与登录稳定性的交付内容；不包含环境配置、依赖目录、构建产物和本地参考资料，浏览器实际操作及 Production 验收仍需人工完成。
+  - 涉及文件：`CHANGELOG.md`
+
 ## 修复多次生成面试问题后可能白屏的问题（2026-10-07）
 
 ### 修复与质量

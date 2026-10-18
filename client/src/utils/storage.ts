@@ -11,6 +11,8 @@ import type {
   MatchDimensionKey,
   ParsedJobDescription,
   ParsedResume,
+  PortfolioDocument,
+  ThemeId,
 } from '../types';
 import { authFetch } from '../services/http';
 
@@ -487,6 +489,8 @@ export interface TargetJobInfo {
   company?: string;
   matchScore: number | null;
   jobId?: string;
+  portfolioDocument?: PortfolioDocument;
+  portfolioThemeId?: ThemeId;
 }
 
 export interface ResumeItem {
@@ -532,6 +536,12 @@ function normalizeResumeItem(value: unknown): ResumeItem {
       company: typeof targetJob.company === 'string' ? targetJob.company : undefined,
       matchScore: typeof targetJob.matchScore === 'number' ? targetJob.matchScore : null,
       jobId: typeof targetJob.jobId === 'string' ? targetJob.jobId : undefined,
+      portfolioDocument: targetJob.portfolioDocument && typeof targetJob.portfolioDocument === 'object'
+        ? targetJob.portfolioDocument as unknown as PortfolioDocument
+        : undefined,
+      portfolioThemeId: ['clean-professional', 'product-home', 'creative-portfolio', 'enterprise-tech'].includes(String(targetJob.portfolioThemeId))
+        ? targetJob.portfolioThemeId as ThemeId
+        : undefined,
     } : undefined,
   };
 }

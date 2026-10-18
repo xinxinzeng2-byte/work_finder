@@ -8,7 +8,7 @@
     "build": "tsc",
     "test:scoring": "ts-node src/services/capabilityScoring.test.ts && ts-node src/services/capabilityScoring.baseline.test.ts && ts-node src/services/capabilityScoringV2.test.ts",
     "test:match-v2": "ts-node src/services/deepseekClient.test.ts && ts-node src/services/matchAnalysisV2.test.ts",
-    "test:portfolio": "ts-node src/services/portfolioValidation.test.ts",
+    "test:portfolio": "ts-node src/services/portfolioValidation.test.ts && ts-node src/services/publicPortfolio.test.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {
@@ -19,7 +19,8 @@
     "mammoth": "^1.12.1",
     "multer": "^1.4.5-lts.1",
     "node-fetch": "^3.0.0",
-    "pdf-parse": "^1.1.1"
+    "pdf-parse": "^1.1.1",
+    "undici": "^6.29.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

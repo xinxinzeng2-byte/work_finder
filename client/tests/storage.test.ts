@@ -69,8 +69,11 @@ assert.equal(truncatedV2.score, null, '缺少评分项证据的 v2 数据不得�
 assert.equal(truncatedV2.capabilityRadar, undefined);
 
 const resume = { basicInfo: {}, skills: [], experiences: [], rawText: '原始简历' };
-memory.set('wf_resumes', JSON.stringify([{ id: 'resume-1', name: '简历', type: 'original', resume, uploadedAt: '2026-09-12T00:00:00.000Z', version: 1, isCurrent: true, targetJob: { position: '测试岗位', matchScore: null } }]));
+const portfolioDocument = { schemaVersion: 1, direction: '产品经理', identity: { name: '测试用户', headline: '产品经理', tagline: '解决真实问题' }, blocks: [], contacts: [], primaryAction: { label: '联系我' } };
+memory.set('wf_resumes', JSON.stringify([{ id: 'resume-1', name: '简历', type: 'original', resume, uploadedAt: '2026-09-12T00:00:00.000Z', version: 1, isCurrent: true, targetJob: { position: '测试岗位', matchScore: null, portfolioDocument, portfolioThemeId: 'enterprise-tech' } }]));
 assert.equal(loadResumes()[0].targetJob?.matchScore, null, '无评分项不得在定制简历记录中伪造成 0 分');
+assert.equal(loadResumes()[0].targetJob?.portfolioDocument?.identity.name, '测试用户', '发布页快照应随定制简历恢复');
+assert.equal(loadResumes()[0].targetJob?.portfolioThemeId, 'enterprise-tech', '发布页主题应随定制简历恢复');
 const updatedResume = await replaceResumeData('resume-1', { ...resume, rawText: '原始简历\n补录经历' });
 assert.equal(updatedResume.version, 2);
 assert.equal(JSON.parse(memory.get('wf_resumes')!)[0].version, 2, '刷新后简历版本应持久化');

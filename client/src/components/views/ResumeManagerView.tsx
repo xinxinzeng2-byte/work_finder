@@ -1,10 +1,11 @@
-import React, { useMemo, useState } from 'react';
-import type { ParsedResume, MergedSkill, MergedExperience } from '../../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import type { ParsedResume, MergedSkill, MergedExperience, JobPreparation } from '../../types';
 import { parseResumeFile, parseResumeText, readFileAsDataUrl } from '../../services/api';
+import { listPreparations } from '../../services/preparations';
 import { deleteResume, hasApiKey, loadResumes, mergeExperiencesFromResumes, mergeSkillsFromResumes, renameResume, saveResume, setCurrentResume, updateMergedSkill, removeMergedSkill, updateMergedExperience, removeMergedExperience, type ResumeItem } from '../../utils/storage';
 import ResumeImportModal from '../ResumeImportModal';
 import ResumePreviewModal from '../ResumePreviewModal';
-import { downloadResumeHtml, downloadResumePdf } from '../../utils/resumeExport';
+import { downloadResume, downloadResumeHtml, downloadResumePdf } from '../../utils/resumeExport';
 
 interface Props {
   onResumeUpdate: (resume: ParsedResume | null) => void;
@@ -26,11 +27,32 @@ export const ResumeManagerView: React.FC<Props> = ({ onResumeUpdate, onNeedApiKe
   const [editingSkill, setEditingSkill] = useState<Partial<MergedSkill>>({});
   const [editExpKey, setEditExpKey] = useState<string | null>(null);
   const [editingExp, setEditingExp] = useState<Partial<MergedExperience>>({});
+  const [preparations, setPreparations] = useState<JobPreparation[]>([]);
   const refresh = () => setResumes(loadResumes());
   const originals = resumes.filter((item) => item.type === 'original');
   const customized = resumes.filter((item) => item.type === 'customized');
   const mergedSkills = useMemo(() => mergeSkillsFromResumes(originals), [resumes]);
   const mergedExperiences = useMemo(() => mergeExperiencesFromResumes(originals), [resumes]);
+
+  useEffect(() => {
+    let active = true;
+    listPreparations().then((items) => { if (active) setPreparations(items); }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  const withPublishedPresentation = (item: ResumeItem): ResumeItem => {
+    if (item.type !== 'customized' || item.targetJob?.portfolioDocument || !item.targetJob?.jobId) return item;
+    const preparation = preparations.find((candidate) => candidate.id === item.targetJob?.jobId);
+    if (!preparation) return item;
+    return {
+      ...item,
+      targetJob: {
+        ...item.targetJob,
+        portfolioDocument: preparation.document,
+        portfolioThemeId: preparation.themeId,
+      },
+    };
+  };
 
   const doRename = () => {
     if (!renameItem || !renameInput.trim()) return;
@@ -151,8 +173,8 @@ export const ResumeManagerView: React.FC<Props> = ({ onResumeUpdate, onNeedApiKe
               {item.targetJob && <p className="mt-1 text-xs text-purple-600">目标岗位：{item.targetJob.position} · 匹配度 {item.targetJob.matchScore ?? '—'}</p>}
             </div>
             <div className="flex flex-wrap justify-end gap-2">
-              <button onClick={() => setPreviewItem(item)} className="btn-ghost h-8 px-3 text-xs">预览</button>
-              <div className="relative"><button onClick={() => setDownloadId(current => current === item.id ? null : item.id)} className="btn-ghost h-8 gap-1 px-3 text-xs" aria-expanded={downloadId===item.id}><span>下载</span><svg className="h-3 w-3 shrink-0" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round"/></svg></button>{downloadId===item.id&&<div className="absolute right-0 top-10 z-20 w-36 overflow-hidden rounded-lg border border-line bg-paper p-1 shadow-card"><button className="block w-full rounded px-3 py-2 text-left text-xs hover:bg-canvas" onClick={()=>{downloadResumeHtml(item);setDownloadId(null);}}>HTML 文件</button><button className="block w-full rounded px-3 py-2 text-left text-xs hover:bg-canvas" onClick={()=>{downloadResumePdf(item);setDownloadId(null);}}>PDF 文件</button></div>}</div>
+              <button onClick={() => setPreviewItem(withPublishedPresentation(item))} className="btn-ghost h-8 px-3 text-xs">预览</button>
+              <div className="relative"><button onClick={() => setDownloadId(current => current === item.id ? null : item.id)} className="btn-ghost h-8 gap-1 px-3 text-xs" aria-expanded={downloadId===item.id}><span>下载</span><svg className="h-3 w-3 shrink-0" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round"/></svg></button>{downloadId===item.id&&<div className="absolute right-0 top-10 z-20 w-36 overflow-hidden rounded-lg border border-line bg-paper p-1 shadow-card">{item.type==='original'?<button className="block w-full rounded px-3 py-2 text-left text-xs hover:bg-canvas" onClick={()=>{void downloadResume(item);setDownloadId(null);}}>原文件</button>:<><button className="block w-full rounded px-3 py-2 text-left text-xs hover:bg-canvas" onClick={()=>{downloadResumeHtml(withPublishedPresentation(item));setDownloadId(null);}}>HTML 文件</button><button className="block w-full rounded px-3 py-2 text-left text-xs hover:bg-canvas" onClick={()=>{downloadResumePdf(withPublishedPresentation(item));setDownloadId(null);}}>PDF 文件</button></>}</div>}</div>
               <button onClick={() => openRename(item)} className="btn-ghost h-8 px-3 text-xs">重命名</button>
               {item.type === 'original' && !item.isCurrent && (
                 <button onClick={() => { setCurrentResume(item.id); onResumeUpdate(item.resume); refresh(); }} className="btn-ghost h-8 px-3 text-xs">设为默认</button>

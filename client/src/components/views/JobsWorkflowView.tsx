@@ -223,7 +223,7 @@ export const JobsWorkflowView: React.FC<Props> = ({ onJobsChange, onComplete, on
   </section>;
 
   const renderContent = () => {
-    if (loading) return <div className="card py-20"><Loading text={currentStep === 'ai-match' ? '正在进行匹配分析...' : 'AI 正在处理...'} subtext={currentStep === 'ai-match' ? '完成后将直接进入岗位分析详情' : '请稍候，完成后结果会自动保存'} /></div>;
+    if (loading) return <div className="card py-20"><Loading text={currentStep === 'ai-match' ? '正在进行匹配分析...' : 'AI 正在处理...'} subtext={currentStep === 'ai-match' ? '完成后将直接进入岗位分析详情' : currentStep === 'import-resume' ? '正在提取文字并请求 AI，最多等待约 100 秒；超时后可重试' : '请稍候，完成后结果会自动保存'} /></div>;
     if (currentStep === 'import-resume') return renderResumeSourceStep();
     if (currentStep === 'extract-skills') return <section className="card">
       <h2 className="font-serif text-xl font-semibold">AI 提取并合并能力</h2>
