@@ -75,7 +75,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 /** 保证历史简历缺少数组字段时，能力库和工作流仍能安全渲染。 */
-function normalizeParsedResume(value: unknown): ParsedResume {
+export function normalizeParsedResume(value: unknown): ParsedResume {
   const source = asRecord(value);
   const basicInfo = asRecord(source.basicInfo);
   // 兼容早期版本可能使用的 abilities / skillList 字段。
@@ -618,6 +618,7 @@ export function saveResume(
 export function saveCustomizedResume(
   resume: ParsedResume,
   options: { name: string; sourceIds: string[]; targetJob: TargetJobInfo },
+  onSync?: (operation: Promise<void>) => void,
 ): ResumeItem {
   const resumes = loadResumes();
   const existingIndex = options.targetJob.jobId
@@ -638,7 +639,21 @@ export function saveCustomizedResume(
   if (existingIndex >= 0) resumes[existingIndex] = item;
   else resumes.push(item);
   localStorage.setItem(KEYS.RESUMES, JSON.stringify(resumes));
-  if (shouldSync()) enqueueCloudWrite(`resume:${item.id}`, () => syncResume(item));
+  if (shouldSync()) {
+    const operation = enqueueCloudWrite(`resume:${item.id}`, () => syncResume(item));
+    onSync?.(operation);
+  }
+  return item;
+}
+
+/** 发布流程必须确认定制简历已写入云端，后台同步失败应反馈给调用方。 */
+export async function savePublishedResume(
+  resume: ParsedResume,
+  options: { name: string; sourceIds: string[]; targetJob: TargetJobInfo },
+): Promise<ResumeItem> {
+  let sync: Promise<void> = Promise.resolve();
+  const item = saveCustomizedResume(resume, options, operation => { sync = operation; });
+  await sync;
   return item;
 }
 

@@ -1,5 +1,23 @@
 # 更新日志
 
+## 修复求职主页发布入库报错与公开页访问兼容（2026-10-20）
+
+### 修复与质量
+
+- **兼容历史来源简历并确认定制简历入库结果**
+  - 摘要：统一解析历史来源快照并补齐技能、经历等字段，避免发布后生成定制简历时触发 `.map` 报错；在发布请求前完成简历转换，主页发布后立即同步发布状态，等待定制简历云端保存成功再关闭弹窗；入库失败时明确提示主页已发布，并支持按原关联更新重试，避免重复创建。
+  - 涉及文件：`client/src/components/views/PreparationEditorView.tsx`、`client/src/services/preparations.ts`、`client/src/utils/preparationResume.ts`、`client/src/utils/storage.ts`
+
+- **兼容历史公开文档并显式传递链接参数**
+  - 摘要：公开主页读取兼容至多两层 JSON 字符串序列化，异常文档显示重新发布提示，缺失联系方式列表时使用空列表；Vercel 公开接口重写显式传递 slug，保留现有公开联系方式展示边界。Preview 与 Production 实际访问仍待部署后验收。
+  - 涉及文件：`client/src/services/preparations.ts`、`vercel.json`
+
+### 测试与文档
+
+- **补充发布入库及公开页兼容回归验证**
+  - 摘要：覆盖来源快照缺失字段、历史字段与字符串数据、公开页文档解析及渲染、私密联系方式隐藏、无效文档与下线提示，以及云端入库失败反馈、等待写入确认和重试不重复创建；记录本次提交范围，不包含本地环境、依赖目录或构建产物。
+  - 涉及文件：`client/tests/preparations.test.tsx`、`client/tests/storage-cloud.test.ts`、`CHANGELOG.md`
+
 ## 完善简历预览导出并增强解析与登录稳定性（2026-10-18）
 
 ### 产品功能

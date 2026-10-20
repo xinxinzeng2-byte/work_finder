@@ -82,7 +82,7 @@
     },
     {
       "source": "/api/public/portfolios/:slug",
-      "destination": "/api/public/[slug]"
+      "destination": "/api/public/[slug]?slug=:slug"
     },
     {
       "source": "/(.*)",
