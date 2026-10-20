@@ -28,7 +28,7 @@ memory.set('wf_saved_jobs', JSON.stringify([oldJob]));
 
 const originalWarn = console.warn;
 console.warn = () => undefined;
-const { isCloudMode, replaceJobAnalysis } = await import('../src/utils/storage');
+const { isCloudMode, replaceJobAnalysis, savePublishedResume, loadResumes } = await import('../src/utils/storage');
 assert.equal(isCloudMode, true, '测试必须运行在云端数据模式');
 await assert.rejects(
   replaceJobAnalysis({ ...oldJob, matchResult: { ...oldMatch, score: 90, summary: '新分析' } }),
@@ -37,6 +37,24 @@ await assert.rejects(
 const persisted = JSON.parse(memory.get('wf_saved_jobs')!)[0];
 assert.equal(persisted.matchResult.score, 60, '云端重评保存失败时不得覆盖本地原分析');
 assert.equal(persisted.matchResult.summary, '原分析');
+const publishResume={basicInfo:{name:'发布测试'},skills:[],experiences:[],rawText:'主页简历'};
+const publishOptions={name:'目标岗位简历',sourceIds:[],targetJob:{position:'产品经理',matchScore:null,jobId:'preparation-1'}};
+await assert.rejects(savePublishedResume(publishResume,publishOptions),/模拟云端写入失败/,'发布流程必须感知云端入库失败');
+const savedId=loadResumes()[0].id;
+let completeWrite:()=>void=()=>undefined;
+let writeStarted:()=>void=()=>undefined;
+const started=new Promise<void>(resolve=>{writeStarted=resolve;});
+globalThis.fetch=async()=>{writeStarted();await new Promise<void>(resolve=>{completeWrite=resolve;});return new Response('{}',{status:201});};
+let saved=false;
+const saving=savePublishedResume(publishResume,{...publishOptions,name:'重试后简历'}).then(()=>{saved=true;});
+await started;
+assert.equal(saved,false,'云端未确认时，发布入库不能提前返回成功');
+completeWrite();
+await saving;
+assert.equal(saved,true);
+assert.equal(loadResumes().length,1,'入库失败后重试不得生成重复简历');
+assert.equal(loadResumes()[0].id,savedId);
+assert.equal(loadResumes()[0].name,'重试后简历');
 console.warn = originalWarn;
 
-console.log('client cloud atomic replacement tests passed');
+console.log('client cloud atomic replacement and published resume sync tests passed');

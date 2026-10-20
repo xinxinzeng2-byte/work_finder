@@ -1,6 +1,6 @@
 import type { ContentSuggestion, InterviewKit, InterviewQuestion, JobPreparation, PortfolioBlock, PortfolioDocument, PublishedPortfolio, ThemeId } from '../types';
 import { isMatchResultV2 } from '../types';
-import { getApiKey, isCloudApiKeyMode, isCloudMode, type SavedJob } from '../utils/storage';
+import { getApiKey, isCloudApiKeyMode, isCloudMode, normalizeParsedResume, type SavedJob } from '../utils/storage';
 import { jsonRequest } from './http';
 
 const LOCAL_KEY='wf_job_preparations';
@@ -12,7 +12,7 @@ export async function flushPreparationWrites():Promise<void>{while(pendingWrites
 
 function localItems():JobPreparation[]{try{return JSON.parse(localStorage.getItem(LOCAL_KEY)||'[]');}catch{return[];}}
 function saveLocal(items:JobPreparation[]){localStorage.setItem(LOCAL_KEY,JSON.stringify(items));}
-function parseStoredJson(value:unknown):unknown{if(typeof value!=='string')return value;try{return JSON.parse(value);}catch{return undefined;}}
+function parseStoredJson(value:unknown):unknown{let parsed=value;for(let depth=0;depth<2&&typeof parsed==='string';depth+=1){try{parsed=JSON.parse(parsed);}catch{return undefined;}}return parsed;}
 const interviewCategories=new Set<InterviewQuestion['category']>(['role','experience','gap','scenario','reverse']);
 function normalizeInterviewQuestions(value:unknown):InterviewQuestion[]{
   const parsed=parseStoredJson(value);
@@ -45,7 +45,7 @@ function normalizePreparation(item:JobPreparation):JobPreparation{
   const parsedDocument=parseStoredJson(stored.document);
   const suggestions=parseStoredJson(stored.contentSuggestions);
   const document=parsedDocument&&typeof parsedDocument==='object'&&!Array.isArray(parsedDocument)?parsedDocument as PortfolioDocument:emptyPortfolio(item.careerDirection);
-  return {...item,document,contentSuggestions:Array.isArray(suggestions)?suggestions.filter((value):value is ContentSuggestion=>Boolean(value)&&typeof value==='object'):[]};
+  return {...item,sourceResumeSnapshot:normalizeParsedResume(parseStoredJson(item.sourceResumeSnapshot)),document,contentSuggestions:Array.isArray(suggestions)?suggestions.filter((value):value is ContentSuggestion=>Boolean(value)&&typeof value==='object'):[]};
 }
 
 export function emptyPortfolio(direction:string,name='你的名字'):PortfolioDocument{return{schemaVersion:1,direction,identity:{name,headline:direction,tagline:`专注于${direction}，用清晰的方法解决真实问题。`},blocks:[],contacts:[],primaryAction:{label:'联系我'}};}
@@ -73,7 +73,14 @@ export async function deletePreparation(id:string):Promise<void>{if(isCloudMode)
 
 export async function publishPreparation(id:string):Promise<{slug:string;publishedAt:string}>{if(!isCloudMode)throw new Error('公开发布需要登录并使用云端模式');return jsonRequest(`/api/data/preparations/${id}/publish`,{method:'POST'});}
 export async function unpublishPreparation(id:string):Promise<void>{if(!isCloudMode)throw new Error('公开发布需要云端模式');await jsonRequest(`/api/data/preparations/${id}/unpublish`,{method:'POST'});}
-export async function loadPublishedPortfolio(slug:string):Promise<PublishedPortfolio>{const response=await fetch(`/api/public/portfolios/${encodeURIComponent(slug)}`,{cache:'no-store'});if(!response.ok)throw new Error(response.status===404?'这个主页不存在或已经下线':'公开主页暂时无法访问');return(await response.json()).portfolio;}
+export async function loadPublishedPortfolio(slug:string):Promise<PublishedPortfolio>{
+  const response=await fetch(`/api/public/portfolios/${encodeURIComponent(slug)}`,{cache:'no-store'});
+  if(!response.ok)throw new Error(response.status===404?'这个主页不存在或已经下线':'公开主页暂时无法访问');
+  const portfolio=(await response.json()).portfolio as PublishedPortfolio;
+  const document=parseStoredJson(portfolio?.document) as PortfolioDocument|undefined;
+  if(!document||typeof document!=='object'||!document.identity||!Array.isArray(document.blocks))throw new Error('公开主页内容格式无效，请联系分享者重新发布');
+  return {...portfolio,document:{...document,contacts:Array.isArray(document.contacts)?document.contacts:[]}};
+}
 
 function aiHeaders():Record<string,string>{const key=isCloudApiKeyMode?null:getApiKey();return key?{'x-deepseek-key':key}:{};}
 export async function generatePortfolio(id:string,payload:{resume:unknown;direction:string;jobDescription?:unknown;matchResult?:unknown}):Promise<PortfolioDocument>{return(await jsonRequest<{document:PortfolioDocument}>(`/api/ai/preparations/${id}/generate`,{method:'POST',headers:aiHeaders(),body:JSON.stringify(payload)})).document;}

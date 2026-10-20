@@ -1,4 +1,5 @@
 import type {AtomicExperience,AtomicSkill,JobPreparation,ParsedResume,PortfolioBlock} from '../types';
+import {normalizeParsedResume} from './storage';
 
 const list=(value:unknown):any[]=>Array.isArray(value)?value:[];
 const text=(value:unknown):string=>typeof value==='string'?value.trim():'';
@@ -21,7 +22,7 @@ function experiencesFromBlocks(blocks:PortfolioBlock[],source:ParsedResume):Atom
 }
 
 export function preparationToCustomizedResume(preparation:JobPreparation):ParsedResume{
-  const source=preparation.sourceResumeSnapshot;
+  const source=normalizeParsedResume(preparation.sourceResumeSnapshot);
   const blocks=[...preparation.document.blocks].filter(block=>block.visible).sort((a,b)=>a.order-b.order);
   const education=blocks.find(block=>block.type==='education');
   const email=preparation.document.contacts.find(contact=>contact.kind==='email'&&contact.value.trim());

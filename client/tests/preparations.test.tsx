@@ -2,11 +2,12 @@ import React from 'react';
 import assert from 'node:assert/strict';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {PortfolioRenderer} from '../src/components/PortfolioRenderer';
-import {buildSuggestions,createPreparation,emptyPortfolio,getInterviewKit,getPreparation,themeNames,updatePreparation} from '../src/services/preparations';
+import {buildSuggestions,createPreparation,emptyPortfolio,getInterviewKit,getPreparation,loadPublishedPortfolio,themeNames,updatePreparation} from '../src/services/preparations';
 import {contactKindLabels} from '../src/utils/portfolioContacts';
 import {preparationToCustomizedResume} from '../src/utils/preparationResume';
 import {resumeToHtml} from '../src/utils/resumeExport';
 import type {ResumeItem} from '../src/utils/storage';
+import type {JobPreparation} from '../src/types';
 
 const memory=new Map<string,string>();
 Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(key:string)=>memory.get(key)??null,setItem:(key:string,value:string)=>{memory.set(key,value);},removeItem:(key:string)=>{memory.delete(key);}}});
@@ -57,5 +58,40 @@ memory.set('wf_interview_kits',JSON.stringify([{preparationId:'legacy-preparatio
 const legacyKit=await getInterviewKit('legacy-preparation');
 assert.equal(legacyKit?.questions.length,1,'异常的历史面试问题不应让页面崩溃');
 assert.equal(legacyKit?.questions[0].answerNote,'','历史问题缺少答题笔记时应补为空文本');
+
+// 发布时即使来源快照缺失数组，也应使用当前主页生成完整简历。
+const currentDocument={...created.document,blocks:[
+  {id:'skills',type:'skills' as const,title:'技能',visible:true,order:0,data:{groups:[{category:'产品',items:['需求分析']}]},sourceRefs:[]},
+  {id:'experience',type:'experience' as const,title:'经历',visible:true,order:1,data:{items:[{company:'主页公司',role:'产品经理',description:'真实经历'}]},sourceRefs:[]},
+]};
+for(const snapshot of [{},null,{basicInfo:{name:'旧姓名'}},JSON.stringify(resume)]){
+  const legacyPreparation={...created,document:currentDocument,sourceResumeSnapshot:snapshot} as unknown as JobPreparation;
+  const converted=preparationToCustomizedResume(legacyPreparation);
+  assert.equal(converted.basicInfo.name,'测试用户');
+  assert.equal(converted.skills[0].name,'需求分析');
+  assert.equal(converted.experiences[0].company,'主页公司');
+}
+const oldFields=preparationToCustomizedResume({...created,sourceResumeSnapshot:{abilities:[{name:'历史技能'}],workExperience:[{companyName:'历史公司',position:'工程师'}]}} as unknown as JobPreparation);
+assert.equal(oldFields.skills[0].name,'历史技能','没有技能区块时应保留来源快照中的历史能力');
+assert.equal(oldFields.experiences[0].company,'历史公司');
+memory.set('wf_job_preparations',JSON.stringify([{...created,sourceResumeSnapshot:JSON.stringify(resume)}]));
+assert.deepEqual((await getPreparation(created.id)).sourceResumeSnapshot.skills,[],'读取来源快照时应解析历史字符串数据');
+
+const originalFetch=globalThis.fetch;
+try{
+  // 直接打开公开主页时，不能依赖编辑器已经解析过文档。
+  for(const storedDocument of [document,JSON.stringify(document),JSON.stringify(JSON.stringify(document))]){
+    globalThis.fetch=async()=>new Response(JSON.stringify({portfolio:{slug:'23456789ABCDEFGH',document:storedDocument,themeId:'clean-professional'}}));
+    const published=await loadPublishedPortfolio('23456789ABCDEFGH');
+    assert.equal(published.document.identity.name,'测试用户');
+    const html=renderToStaticMarkup(<PortfolioRenderer document={published.document} themeId={published.themeId}/>);
+    assert.ok(html.includes('测试用户'));
+    assert.ok(!html.includes('private@example.com'));
+  }
+  globalThis.fetch=async()=>new Response(JSON.stringify({portfolio:{document:'broken-json'}}));
+  await assert.rejects(loadPublishedPortfolio('23456789ABCDEFGH'),/内容格式无效/);
+  globalThis.fetch=async()=>new Response('{}',{status:404});
+  await assert.rejects(loadPublishedPortfolio('23456789ABCDEFGH'),/不存在或已经下线/);
+}finally{globalThis.fetch=originalFetch;}
 
 console.log('client preparation and theme tests passed');
